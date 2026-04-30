@@ -319,6 +319,8 @@
                 page: OCRDataBottomSheet,
                 fullscreen: true,
                 props: {
+                    pageIndex: currentIndex,
+                    document,
                     ocrData: items.getItem(currentIndex).ocrData,
                     imagePath: item.imagePath,
                     imageWidth: item.width,

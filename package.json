@@ -111,7 +111,8 @@
         "@nativescript/core": "8.9.9",
         "merge-properties-files": "1.1.6",
         "mini-css-extract-plugin": "2.10.0",
-        "svelte-loader": "3.2.4"
+        "svelte-loader": "3.2.4",
+        "vitest": "4.1.5"
     },
     "commitlint": {
         "extends": [
