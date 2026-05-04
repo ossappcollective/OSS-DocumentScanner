@@ -11,6 +11,7 @@ import {
     EVENT_DOCUMENT_DELETED,
     EVENT_DOCUMENT_MOVED_FOLDER,
     EVENT_DOCUMENT_PAGES_ADDED,
+    EVENT_DOCUMENT_PAGE_DELETED,
     EVENT_DOCUMENT_PAGE_UPDATED,
     EVENT_DOCUMENT_UPDATED,
     EVENT_FOLDER_ADDED,
@@ -159,18 +160,21 @@ export class SyncService extends BaseWorkerHandler<SyncWorker> {
     onDocumentUpdated(event: DocumentUpdatedEventData) {
         // only used for data sync
         DEV_LOG && console.log('SYNC', 'onDocumentUpdated', event.updateModifiedDate);
-        if (event.updateModifiedDate !== false) {
-            let type = SyncType.PDF;
-            if (event.fromWorker !== true) {
-                type |= SyncType.DATA;
-            }
-            this.syncDocumentsInternal({ event, type, fromEvent: event.eventName });
+        if (event.updateModifiedDate !== false && event.fromWorker !== true) {
+            // let type = SyncType.PDF;
+            // if (event.fromWorker !== true) {
+            // let type = SyncType.DATA;
+            // }
+            this.syncDocumentsInternal({ event, type: SyncType.DATA, fromEvent: event.eventName });
         }
     }
     sendImageEvent(event: DocumentPagesAddedEventData) {
         DEV_LOG && console.log('Sync', 'sendImageEvent');
         // only used for image sync
         this.syncDocumentsInternal({ event, type: SyncType.IMAGE | SyncType.PDF, fromEvent: event.eventName });
+    }
+    sendPDFEvent(event: DocumentPagesAddedEventData) {
+        this.syncDocumentsInternal({ event, type: SyncType.PDF, fromEvent: event.eventName });
     }
     sendDataEvent(event: DocumentEventData) {
         if (event.fromWorker !== true) {
@@ -236,6 +240,7 @@ export class SyncService extends BaseWorkerHandler<SyncWorker> {
             documentsService.on(EVENT_DOCUMENT_DELETED, this.onDocumentDeleted, this);
             documentsService.on(EVENT_DOCUMENT_PAGE_UPDATED, this.sendImageEvent, this);
             documentsService.on(EVENT_DOCUMENT_PAGES_ADDED, this.sendImageEvent, this);
+            documentsService.on(EVENT_DOCUMENT_PAGE_DELETED, this.sendPDFEvent, this);
             documentsService.on(EVENT_DOCUMENT_MOVED_FOLDER, this.sendDataEvent, this);
             documentsService.on(EVENT_FOLDER_UPDATED, this.sendDataEvent, this);
             documentsService.on(EVENT_FOLDER_ADDED, this.sendDataEvent, this);
@@ -252,6 +257,7 @@ export class SyncService extends BaseWorkerHandler<SyncWorker> {
         documentsService.off(EVENT_DOCUMENT_DELETED, this.onDocumentDeleted, this);
         documentsService.off(EVENT_DOCUMENT_PAGE_UPDATED, this.sendImageEvent, this);
         documentsService.off(EVENT_DOCUMENT_PAGES_ADDED, this.sendImageEvent, this);
+        documentsService.off(EVENT_DOCUMENT_PAGE_DELETED, this.sendPDFEvent, this);
         documentsService.off(EVENT_DOCUMENT_MOVED_FOLDER, this.sendDataEvent, this);
         documentsService.off(EVENT_FOLDER_UPDATED, this.sendDataEvent, this);
         documentsService.off(EVENT_FOLDER_ADDED, this.sendDataEvent, this);

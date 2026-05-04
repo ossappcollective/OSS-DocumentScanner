@@ -443,6 +443,9 @@ export class OCRDocument extends Observable implements Document {
             await documentsService.pageRepository.update(page, data);
             // we save the document so that the modifiedDate gets changed
             // no need to notify though
+
+            // save needs to be before onPageUpdated so that _sync state is updated
+            // before the sync services gets the event
             if (saveDoc) {
                 await this.save({}, true, notify);
             }
