@@ -13,7 +13,7 @@
 
     const topItems = [
         {
-            type: 'header',
+            type: 'sectionHeader',
             title: lc('webdav_config')
         },
         {

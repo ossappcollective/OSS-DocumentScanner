@@ -14,7 +14,7 @@
 
     const topItems = [
         {
-            type: 'header',
+            type: 'sectionHeader',
             title: lc('authentication')
         },
         {

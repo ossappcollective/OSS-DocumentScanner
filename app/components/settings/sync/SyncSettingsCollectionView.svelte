@@ -211,7 +211,7 @@
 </script>
 
 <collectionview bind:this={collectionView} ios:autoReloadItemOnLayout={true} itemTemplateSelector={selectTemplate} {items} android:paddingBottom={$windowInset.bottom} {...$$restProps}>
-    <Template key="header" let:item>
+    <Template key="sectionHeader" let:item>
         <label class="sectionHeader" text={item.title} />
     </Template>
     <Template key="color" let:item>
