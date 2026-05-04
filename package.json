@@ -38,7 +38,7 @@
         "@akylas/kiss-orm": "2.1.14",
         "@akylas/nativescript": "8.9.15",
         "@akylas/nativescript-app-tools": "file:tools",
-        "@akylas/nativescript-app-utils": "2.2.11",
+        "@akylas/nativescript-app-utils": "2.2.13",
         "@akylas/nativescript-inapp-purchase": "0.0.4",
         "@akylas/nativescript-inappbrowser": "3.1.8",
         "@akylas/panzoom": "4.6.0",

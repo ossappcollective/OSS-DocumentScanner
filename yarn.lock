@@ -85,15 +85,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@akylas/nativescript-app-utils@npm:2.2.11":
-  version: 2.2.11
-  resolution: "@akylas/nativescript-app-utils@npm:2.2.11"
+"@akylas/nativescript-app-utils@npm:2.2.13":
+  version: 2.2.13
+  resolution: "@akylas/nativescript-app-utils@npm:2.2.13"
   dependencies:
-    "@nativescript-community/https": "npm:4.1.27"
-    "@nativescript-community/l": "npm:4.3.10"
-    "@nativescript-community/ui-share-file": "npm:1.3.3"
+    "@nativescript-community/https": "npm:^4.1.32"
+    "@nativescript-community/l": "npm:^4.3.11"
+    "@nativescript-community/ui-share-file": "npm:^1.3.3"
     make-error: "npm:1.3.6"
-  checksum: 10/8fe1d4aa8826415e9f6769f1a27c21a298a2f282117425447853ba45e5abd9b68cdc57fdbdf5ab7a3366978b52410b26651fb579bd7e70b9ba51434b449c0836
+  checksum: 10/19a2e00f67b108f942bb0ebe87794da5c4ce6cf5bb41a670b943b3dab2def13cbd414092ee5da459e25a57755ba805347c7ec1719083e7f4a34e0b492db074e6
   languageName: node
   linkType: hard
 
@@ -3817,34 +3817,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nativescript-community/https@npm:4.1.27":
-  version: 4.1.27
-  resolution: "@nativescript-community/https@npm:4.1.27"
-  checksum: 10/30d88010ac94ac5e0e133c5df163344fd6455db12729ad51af464fa39f065cf367c0f553726b3b636869ca0ba0126cdd4060b542cec93e8e40271980b6df0530
-  languageName: node
-  linkType: hard
-
-"@nativescript-community/https@npm:4.1.32":
+"@nativescript-community/https@npm:4.1.32, @nativescript-community/https@npm:^4.1.32":
   version: 4.1.32
   resolution: "@nativescript-community/https@npm:4.1.32"
   checksum: 10/8eed4f362e656a9ad7a4da82e43087eed54ee218b2b130c2e11b8963d60eeec631155ea4f985a020b8f66a185846060d894d5c27799faad0f39ab6d10f38e50c
   languageName: node
   linkType: hard
 
-"@nativescript-community/l@npm:4.3.10":
-  version: 4.3.10
-  resolution: "@nativescript-community/l@npm:4.3.10"
-  dependencies:
-    "@nativescript/hook": "npm:~2.0.0"
-    mkdirp: "npm:^1.0.4"
-    shorthash: "npm:0.0.2"
-    simple-plist: "npm:^1.1.1"
-    sprintf-js: "npm:^1.1.2"
-  checksum: 10/f56b0474cb6521d01e0f558a2c8a6b163c031b0641a2a0f8c15a61c3d28ff0a3a0d6277fcedc1bbe7a723e2684889d151aea17841ffb0d244bfc9959b6ab550d
-  languageName: node
-  linkType: hard
-
-"@nativescript-community/l@npm:4.3.11":
+"@nativescript-community/l@npm:4.3.11, @nativescript-community/l@npm:^4.3.11":
   version: 4.3.11
   resolution: "@nativescript-community/l@npm:4.3.11"
   dependencies:
@@ -4240,7 +4220,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nativescript-community/ui-share-file@npm:1.3.3":
+"@nativescript-community/ui-share-file@npm:1.3.3, @nativescript-community/ui-share-file@npm:^1.3.3":
   version: 1.3.3
   resolution: "@nativescript-community/ui-share-file@npm:1.3.3"
   checksum: 10/b4e512f5a9e8681dc35dfd683aa76e66cae8298c037468c06ce3697ee5ab64e1adb181659e8798bb4b12870631fbabc09958f1bf959c714dcaebe739da9bb3aa
@@ -18509,7 +18489,7 @@ __metadata:
     "@akylas/nativescript": "npm:8.9.15"
     "@akylas/nativescript-android-runtime": "npm:8.9.2"
     "@akylas/nativescript-app-tools": "file:tools"
-    "@akylas/nativescript-app-utils": "npm:2.2.11"
+    "@akylas/nativescript-app-utils": "npm:2.2.13"
     "@akylas/nativescript-inapp-purchase": "npm:0.0.4"
     "@akylas/nativescript-inappbrowser": "npm:3.1.8"
     "@akylas/nativescript-ios-runtime": "npm:8.9.6"
