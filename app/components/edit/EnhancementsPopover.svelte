@@ -1,6 +1,6 @@
 <script context="module" lang="ts">
     import { TRANSFORMS } from '~/utils/localized_constant';
-    import OptionSelect from '../common/OptionSelect.svelte';
+    import OptionSelect from '@shared/components/OptionSelect.svelte';
     import { get } from 'svelte/store';
     import { Template } from '@nativescript-community/svelte-native/components';
     import { FILTER_COL_WIDTH, FILTER_ROW_HEIGHT } from '~/utils/constants';

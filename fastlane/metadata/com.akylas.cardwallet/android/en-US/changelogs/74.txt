@@ -1,0 +1,10 @@
+Features:
+- allow to modify ocr data from the OCR data view
+
+Bug fixes:
+- main list order now updating after document/card name change
+- dots in filenames being replaced by %3A
+- dont replace `:` in file names
+- fix issue while trying to save long document names
+- fine grain control over brightness/contrast by lowering possible span
+- Translations update

@@ -35,6 +35,7 @@
     --popupMenuBackground: #C2C9BD;
 
     --mdiFontFamily: #{$mdiFontFamily};
+    --appFontFamily: #{$appFontFamily};
 
     --navigationBarHeight: 0;
     --actionBarButtonHeight: 50;
@@ -44,6 +45,9 @@
 // .lato {
 // font-family: $lato-fontFamily;
 // }
+.app {
+    font-family: $appFontFamily;
+}
 
 .mdi {
     font-family: $mdiFontFamily;

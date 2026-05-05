@@ -3,9 +3,14 @@ import { formatCurrency } from '@shared/helpers/format';
 import dayjs from 'dayjs';
 
 /**
- * PKPass model representing an Apple Wallet Pass
- * Based on Apple's PassKit specification
+ * PKPass model representing a wallet pass (Apple PKPass or ESpass)
+ * Based on Apple's PassKit specification and ESpass open standard
  */
+
+export enum PKPassType {
+    PKPass = 'pkpass',
+    ESpass = 'espass'
+}
 
 export enum PKPassStyle {
     BoardingPass = 'boardingPass',
@@ -135,6 +140,9 @@ export class PKPass extends Observable {
     id: string;
     page_id: string; // Changed from document_id to page_id
 
+    // Pass type identifier (pkpass or espass)
+    passType: PKPassType = PKPassType.PKPass;
+
     // PKPass data
     passData: PKPassData;
     images: PKPassImages;
@@ -147,10 +155,11 @@ export class PKPass extends Observable {
     createdDate: number;
     modifiedDate?: number;
 
-    constructor(id: string, pageId: string) {
+    constructor(id: string, pageId: string, passType: PKPassType = PKPassType.PKPass) {
         super();
         this.id = id;
         this.page_id = pageId;
+        this.passType = passType;
         this.createdDate = Date.now();
     }
 
@@ -207,6 +216,11 @@ export class PKPass extends Observable {
         return this.passData.voided === true;
     }
 
+    getLocalizedFieldLabel(field: any, currentLang: string): string {
+        if (!field) return null;
+        const label = field.label || field.key;
+        return this.getLocalizedValue(label, currentLang);
+    }
     /**
      * Get localized value for a given key based on current app language
      * @param key The key to localize
@@ -323,7 +337,7 @@ export class PKPass extends Observable {
     }
 
     static fromJSON(jsonObj: any): PKPass {
-        const pass = new PKPass(jsonObj.id, jsonObj.page_id || jsonObj.document_id); // Support both old and new schema
+        const pass = new PKPass(jsonObj.id, jsonObj.page_id || jsonObj.document_id, jsonObj.passType || PKPassType.PKPass); // Support both old and new schema
         Object.assign(pass, {
             passData: typeof jsonObj.passData === 'string' ? JSON.parse(jsonObj.passData) : jsonObj.passData,
             images: typeof jsonObj.images === 'string' ? JSON.parse(jsonObj.images) : jsonObj.images,
@@ -339,6 +353,7 @@ export class PKPass extends Observable {
         return {
             id: this.id,
             page_id: this.page_id,
+            passType: this.passType,
             passData: this.passData,
             images: this.images,
             // passJsonPath: this.passJsonPath,

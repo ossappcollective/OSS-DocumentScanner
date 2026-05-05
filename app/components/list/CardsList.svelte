@@ -1,16 +1,28 @@
 <script context="module" lang="ts">
     import { lc } from '@nativescript-community/l';
     import { Template } from '@nativescript-community/svelte-native/components';
+    import { NativeViewElementNode } from '@nativescript-community/svelte-native/dom';
     import { Paint } from '@nativescript-community/ui-canvas';
     import { CollectionViewWithSwipeMenu } from '@nativescript-community/ui-collectionview-swipemenu';
     import { showBottomSheet } from '@nativescript-community/ui-material-bottomsheet/svelte';
     import { ApplicationSettings, ObservableArray, StackLayout } from '@nativescript/core';
     import { throttle } from '@nativescript/core/utils';
+    import { prefs } from '@shared/services/preferences';
     import { showError } from '@shared/utils/showError';
     import { onMount } from 'svelte';
     import { Writable, writable } from 'svelte/store';
+    import CardListCell from '~/components/list/CardListCell.svelte';
     import { DocFolder, OCRDocument } from '~/models/OCRDocument';
-    import { CARD_RATIO, DEFAULT_NB_COLUMNS, DEFAULT_NB_COLUMNS_LANDSCAPE, SETTINGS_NB_COLUMNS, SETTINGS_NB_COLUMNS_LANDSCAPE } from '~/utils/constants';
+    import {
+        CARD_RATIO,
+        DEFAULT_CARD_ALWAYS_SHOW_NAME,
+        DEFAULT_NB_COLUMNS,
+        DEFAULT_NB_COLUMNS_LANDSCAPE,
+        SETTINGS_CARD_ALWAYS_SHOW_NAME,
+        SETTINGS_NB_COLUMNS,
+        SETTINGS_NB_COLUMNS_LANDSCAPE
+    } from '~/utils/constants';
+    import { documentHasPKPassData } from '~/utils/pkpass';
     import { goToDocumentAfterScan, importImageFromCamera } from '~/utils/ui';
     import { colors, fontScale, hasCamera, isLandscape, screenHeightDips, screenWidthDips, windowInset } from '~/variables';
     import MainList, { Item } from './MainList.svelte';
@@ -20,11 +32,6 @@
 </script>
 
 <script lang="ts">
-    import { NativeViewElementNode } from '@nativescript-community/svelte-native/dom';
-    import { documentHasPKPassData, pkpassToImage } from '~/utils/pkpass';
-    import CardListCell from '~/components/list/CardListCell.svelte';
-    import { getActualLanguage } from '@shared/helpers/lang';
-
     let { colorOnBackground, colorOnPrimary, colorOnSurfaceVariant, colorSurface } = $colors;
     $: ({ colorOnBackground, colorOnPrimary, colorOnSurfaceVariant, colorSurface } = $colors);
     let fabHolder: NativeViewElementNode<StackLayout>;
@@ -32,6 +39,9 @@
     let viewStyle: string;
     let nbColumns: Writable<number>;
     let syncEnabled: boolean;
+
+    export let alwaysShowNames = ApplicationSettings.getBoolean(SETTINGS_CARD_ALWAYS_SHOW_NAME, DEFAULT_CARD_ALWAYS_SHOW_NAME);
+    prefs.on(`key:${SETTINGS_CARD_ALWAYS_SHOW_NAME}`, () => (alwaysShowNames = ApplicationSettings.getBoolean(SETTINGS_CARD_ALWAYS_SHOW_NAME, DEFAULT_CARD_ALWAYS_SHOW_NAME)));
 
     export let folder: DocFolder;
     let getSyncColors: (item: Item) => string[];
@@ -62,7 +72,7 @@
     async function onAddButton() {
         DEV_LOG && console.log('onAddButton');
         try {
-            const OptionSelect = (await import('~/components/common/OptionSelect.svelte')).default;
+            const OptionSelect = (await import('@shared/components/OptionSelect.svelte')).default;
             const rowHeight = 58;
             const options = (
                 $hasCamera
@@ -318,6 +328,7 @@
     </Template>
     <Template key="full" let:item>
         <CardListCell
+            {alwaysShowNames}
             {collectionView}
             height={itemRowHeight}
             {item}
@@ -333,6 +344,7 @@
     </Template>
     <Template key="list" let:item>
         <CardListCell
+            {alwaysShowNames}
             {collectionView}
             height={itemRowHeight}
             {item}
@@ -348,6 +360,7 @@
     </Template>
     <Template key="columns" let:item>
         <CardListCell
+            {alwaysShowNames}
             {collectionView}
             height={itemRowHeight}
             {item}
@@ -364,6 +377,7 @@
     <Template key="pkpass_cardholder" let:item>
         <absolutelayout height={itemRowHeight}>
             <CardListCell
+                {alwaysShowNames}
                 {collectionView}
                 height={$itemHeight}
                 {item}
@@ -382,6 +396,7 @@
     </Template>
     <Template key="pkpass_full" let:item>
         <CardListCell
+            {alwaysShowNames}
             {collectionView}
             height={itemRowHeight}
             {item}
@@ -398,6 +413,7 @@
     </Template>
     <Template key="pkpass_list" let:item>
         <CardListCell
+            {alwaysShowNames}
             {collectionView}
             height={itemRowHeight}
             {item}
@@ -414,6 +430,7 @@
     </Template>
     <Template key="pkpass_columns" let:item>
         <CardListCell
+            {alwaysShowNames}
             {collectionView}
             height={itemRowHeight}
             {item}

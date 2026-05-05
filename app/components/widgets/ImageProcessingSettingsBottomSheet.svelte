@@ -29,8 +29,8 @@
     import { showError } from '@shared/utils/showError';
     import { ColorMatricesTypes, getColorMatrix, showMatrixLevelPopover, showPopoverMenu, showSlidersPopover } from '~/utils/ui';
     import { colors, screenHeightDips, screenWidthDips, windowInset } from '~/variables';
-    import ListItem from '../common/ListItem.svelte';
-    import ListItemAutoSize from '../common/ListItemAutoSize.svelte';
+    import ListItem from '@shared/components/ListItem.svelte';
+    import ListItemAutoSize from '@shared/components/ListItemAutoSize.svelte';
 
     // technique for only specific properties to get updated on store change
     $: ({ colorPrimary } = $colors);
@@ -313,7 +313,7 @@
             <label class="sectionHeader" text={lc('transformations')} />
             <stacklayout>
                 {#each TRANSFORMS as item (item.id)}
-                    <ListItem columns="*,auto" height={70} subtitle={item.subtitle} title={item.name} on:tap={(e) => onTransformTap(item, e)}>
+                    <ListItem columns="*,auto" height={70} {item} on:tap={(e) => onTransformTap(item, e)}>
                         <checkbox
                             id="checkbox"
                             checked={transforms.indexOf(item.id) !== -1}
@@ -323,8 +323,8 @@
                             on:checkedChange={(e) => onCheckedChanged(item, e)} />
                     </ListItem>
                 {/each}
-                <ListItemAutoSize rightValue={brightness.toFixed(2)} title={lc('brightness')} on:tap={editBrightnessContrast} />
-                <ListItemAutoSize rightValue={contrast.toFixed(2)} title={lc('contrast')} on:tap={editBrightnessContrast} />
+                <ListItemAutoSize item={{ title: lc('brightness'), rightValue: brightness.toFixed(2) }} on:tap={editBrightnessContrast} />
+                <ListItemAutoSize item={{ title: lc('contrast'), rightValue: contrast.toFixed(2) }} on:tap={editBrightnessContrast} />
             </stacklayout>
             <label class="sectionHeader" text={lc('filters')} />
             <collectionview bind:this={collectionView} colWidth={FILTER_COL_WIDTH} height={FILTER_ROW_HEIGHT} items={filters} orientation="horizontal">

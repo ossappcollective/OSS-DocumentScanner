@@ -132,10 +132,11 @@ cv::Mat generateQRCode(std::string text, std::string format, int width, int heig
   }
   auto bcode = CreateBarcodeFromText(text, cOpts);
   auto image = WriteBarcodeToImage(bcode, wOpts);
-  //    auto matrix = writer.encode(text, width, height);
-  //    auto bitmap = ToMatrix<uint8_t>(matrix);
   const unsigned char *buffer = image.data();
-  cv::Mat resultMat(image.height(),image.width(),CV_8UC1,(unsigned char*)buffer);
+  // Clone immediately: image is a local variable whose data pointer becomes
+  // dangling once the function returns. The clone gives resultMat its own copy.
+  cv::Mat resultMat = cv::Mat(image.height(), image.width(), CV_8UC1,
+                              (unsigned char*)buffer).clone();
   return resultMat;
   
   //    auto writer = ZXing::MultiFormatWriter(ZXing::BarcodeFormatFromString(format));

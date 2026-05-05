@@ -408,6 +408,7 @@ platform :ios do
   end
   lane :upload_store  do |params| 
     build_output = params[:build_output]
+    options = params[:options]
     api_key = build_output['api_key']
     # if (ENV["GITHUB_ACTIONS"] == 'true')
     #   # get a new key as the build process might be long and the last ke
@@ -422,6 +423,7 @@ platform :ios do
     if (params[:flavor] == "production")
       upload_to_app_store(
         api_key: api_key,
+        precheck_include_in_app_purchases: false,
         ignore_language_directory_validation: true,
         metadata_path:File.join(metadata_path_realpath, "ios"),
         screenshots_path:File.join(metadata_path_realpath, "ios", "screenshots"),
@@ -429,10 +431,11 @@ platform :ios do
         automatic_release: true,
         reject_if_possible: true,
         submit_for_review: false,
-        skip_metadata:  !options[:upload_metadata],
-        skip_screenshots: !options[:upload_screenshots],
-        overwrite_screenshots: !options[:upload_screenshots],
+        skip_metadata:  options[:upload_metadata] != true,
+        skip_screenshots: options[:upload_screenshots] != true,
+        overwrite_screenshots: options[:upload_screenshots] != true,
         release_notes: {
+          'en-US' => params[:changelog],
           'default' => params[:changelog]
         },
         submission_information: { 
@@ -454,14 +457,12 @@ platform :ios do
   end
   desc 'Fetch certificates and provisioning profiles'
   lane :certificates do
-      if (ENV["GITHUB_ACTIONS"] == 'true')
-        api_key = app_store_connect_api_key(
-          key_id: ENV['APPLE_KEY_ID'],
-          duration: 1200,
-          issuer_id: ENV['APPLE_ISSUER_ID'],
-          key_content: ENV['APPLE_KEY_CONTENT']
-        )
-      end
+      api_key = app_store_connect_api_key(
+        key_id: ENV['APPLE_KEY_ID'],
+        duration: 1200,
+        issuer_id: ENV['APPLE_ISSUER_ID'],
+        key_content: ENV['APPLE_KEY_CONTENT']
+      )
       fastlane_match(type: 'development', api_key: api_key)
       fastlane_match(type: 'appstore', api_key: api_key)
   end
@@ -469,14 +470,12 @@ platform :ios do
   desc 'Build the iOS application.'
   lane :build do |params| 
       options = params[:options]
-      if (ENV["GITHUB_ACTIONS"] == 'true')
-        api_key = app_store_connect_api_key(
-          key_id: ENV['APPLE_KEY_ID'],
-          duration: 1200,
-          issuer_id: ENV['APPLE_ISSUER_ID'],
-          key_content: ENV['APPLE_KEY_CONTENT']
-        )
-      end
+      api_key = app_store_connect_api_key(
+        key_id: ENV['APPLE_KEY_ID'],
+        duration: 1200,
+        issuer_id: ENV['APPLE_ISSUER_ID'],
+        key_content: ENV['APPLE_KEY_CONTENT']
+      )
       if (params[:flavor] == "appcenter")
         register_devices(devices_file: "./fastlane/devices.txt")
         fastlane_match(type: 'adhoc', api_key: api_key)
@@ -484,16 +483,14 @@ platform :ios do
         fastlane_match(type: 'appstore', api_key: api_key)
       end
       prepare(platform:'ios', options: options)
-      if (ENV["GITHUB_ACTIONS"] == 'true')
       #    # automatic code signing
-        update_code_signing_settings(
-          use_automatic_signing: false,
-          bundle_identifier: app_identifier,
-          code_sign_identity: "iPhone Distribution",
-          profile_name: lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING][app_identifier],
-          path: File.join(project_root_path, app_build_path, "ios", "#{$ios_scheme}.xcodeproj")
-        )
-      end
+      update_code_signing_settings(
+        use_automatic_signing: false,
+        bundle_identifier: app_identifier,
+        code_sign_identity: "iPhone Distribution",
+        profile_name: lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING][app_identifier],
+        path: File.join(project_root_path, app_build_path, "ios", "#{$ios_scheme}.xcodeproj")
+      )
       #   build_ios_app(
       #     output_directory:"dist",
       #     scheme: $ios_scheme,

@@ -140,7 +140,7 @@ std::optional<DocumentOCR::OCRResult> DocumentOCR::detectTextImpl(const Mat &ima
     //    double t_r = (double) getTickCount();
     std::vector<cv::Rect> boundRects;
     cv::Mat img_gray, img_sobel, img_threshold, element;
-    cvtColor(image, img_sobel, COLOR_BGR2GRAY);
+    cvtColor(image, img_sobel, image.channels() == 4 ? COLOR_RGBA2GRAY : COLOR_BGR2GRAY);
      if (options.rotation != 0)
     {
         switch (options.rotation)
@@ -197,7 +197,11 @@ std::optional<DocumentOCR::OCRResult> DocumentOCR::detectTextImpl(const Mat &ima
                     appRect.y *= resizeScale;
                     appRect.width *= resizeScale;
                     appRect.height *= resizeScale;
-                    if (appRect.width < 0.9 * imageWidth && appRect.height < 0.9 * imageHeight)
+                    // Clamp to img_sobel bounds to prevent an out-of-bounds ROI
+                    // when float scaling produces a rect that overshoots the image edge.
+                    appRect &= cv::Rect(0, 0, imageWidth, imageHeight);
+                    if (appRect.width > 0 && appRect.height > 0 &&
+                        appRect.width < 0.9 * imageWidth && appRect.height < 0.9 * imageHeight)
                     {
                         boundRects.push_back(appRect);
                         // if (!out_img.empty())
@@ -226,7 +230,10 @@ std::optional<DocumentOCR::OCRResult> DocumentOCR::detectTextImpl(const Mat &ima
     }
 
     tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
-    api->Init(options.dataPath.c_str(), options.language.c_str(), static_cast<tesseract::OcrEngineMode>(options.oem));
+    if (api->Init(options.dataPath.c_str(), options.language.c_str(), static_cast<tesseract::OcrEngineMode>(options.oem)) != 0) {
+        delete api;
+        return std::nullopt;
+    }
     api->SetPageSegMode(static_cast<tesseract::PageSegMode>(options.pageSegMode));
     api->SetVariable("user_defined_dpi", options.dpi.c_str());
     string fullText = "";
@@ -286,8 +293,10 @@ std::optional<DocumentOCR::OCRResult> DocumentOCR::detectTextImpl(const Mat &ima
                 if ((wordSize < 2) || (conf < 51) ||
                     ((wordSize == 2) && (stdWord[0] == stdWord[1])) ||
                     ((wordSize < 4) && (conf < 60)) ||
-                    isRepetitive(stdWord))
+                    isRepetitive(stdWord)) {
+                    delete[] word;
                     continue;
+                }
 
                 int x1, y1, x2, y2;
                 ri->BoundingBox(level, &x1, &y1, &x2, &y2);
@@ -308,9 +317,11 @@ std::optional<DocumentOCR::OCRResult> DocumentOCR::detectTextImpl(const Mat &ima
                 } else {
                     fullText += stdWord;
                 }
-                // we keep "spaces" for full text but remove then as box
-                if (trimWord.size() == 0)
+                // we keep "spaces" for full text but remove them as box
+                if (trimWord.size() == 0) {
+                    delete[] word;
                     continue;
+                }
                 bool bold;
                 bool italic;
                 bool underlined;
@@ -361,7 +372,8 @@ std::optional<DocumentOCR::OCRResult> DocumentOCR::detectTextImpl(const Mat &ima
         }
         boundRectDone++;
     }
-    api->Clear();
+    api->End();
+    delete api;
     if (progressLambda != std::nullopt) {
         progressLambda.value()(100);
     }

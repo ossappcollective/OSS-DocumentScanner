@@ -9,7 +9,7 @@
     import { ObservableArray, View } from '@nativescript/core';
     import { showError } from '@shared/utils/showError';
     import { Writable } from 'svelte/store';
-    import ListItemAutoSize from '~/components/common/ListItemAutoSize.svelte';
+    import ListItemAutoSize from '@shared/components/ListItemAutoSize.svelte';
     import { l, lc } from '~/helpers/locale';
     import { ALERT_OPTION_MAX_HEIGHT } from '~/utils/constants';
     import { createView, pickColor, showAlertOptionSelect, showSliderPopover } from '~/utils/ui';
@@ -211,11 +211,11 @@
 </script>
 
 <collectionview bind:this={collectionView} ios:autoReloadItemOnLayout={true} itemTemplateSelector={selectTemplate} {items} android:paddingBottom={$windowInset.bottom} {...$$restProps}>
-    <Template key="header" let:item>
+    <Template key="sectionHeader" let:item>
         <label class="sectionHeader" text={item.title} />
     </Template>
     <Template key="color" let:item>
-        <ListItemAutoSize fontSize={20} subtitle={lc('sync_service_color_desc')} title={lc('color')} on:tap={(event) => changeColor(item, event)}>
+        <ListItemAutoSize item={{ subtitle: lc('sync_service_color_desc'), title: lc('color') }} on:tap={(event) => changeColor(item, event)}>
             <absolutelayout backgroundColor={$store.color} borderColor={colorOutline} borderRadius="50%" borderWidth={2} col={1} height={40} marginLeft={10} width={40} />
         </ListItemAutoSize>
     </Template>
@@ -234,13 +234,12 @@
         </gridlayout>
     </Template>
     <Template key="switch" let:item>
-        <ListItemAutoSize fontSize={20} leftIcon={item.icon} subtitle={getDescription(item)} title={getTitle(item)} on:tap={(event) => onTap(item, event)}>
+        <ListItemAutoSize item={{ ...item, title: getTitle(item), subtitle: getDescription(item) }} on:tap={(event) => onTap(item, event)}>
             <switch id="checkbox" checked={item.value} col={1} marginLeft={10} verticalAlignment="center" on:checkedChange={(e) => onCheckBox(item, e)} />
         </ListItemAutoSize>
     </Template>
     <Template let:item>
-        <ListItemAutoSize fontSize={20} rightValue={item.rightValue} showBottomLine={false} subtitle={getDescription(item)} title={getTitle(item)} on:tap={(event) => onTap(item, event)}>
-        </ListItemAutoSize>
+        <ListItemAutoSize item={{ ...item, title: getTitle(item), subtitle: getDescription(item) }} showBottomLine={false} on:tap={(event) => onTap(item, event)}></ListItemAutoSize>
     </Template>
     <slot />
 </collectionview>

@@ -1,0 +1,4 @@
+Bug fixes:
+- cards always show name by default. Can be changed in appearance settings
+- allow to disable crash reports
+- prevent error on startup

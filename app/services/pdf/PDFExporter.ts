@@ -11,10 +11,13 @@ import { getPageColorMatrix } from '~/utils/matrix';
 import { pkpassToImage } from '~/utils/pkpass';
 import { requestStoragePermission } from '~/utils/ui';
 import { PDFExportOptions, getPDFDefaultExportOptions } from './PDFCanvas';
-export async function exportPDFAsync({ compress, document, filename, folder = knownFolders.temp().path, options: baseOptions, pages }: PDFExportOptions): Promise<string> {
+export async function exportPDFAsync({ compress, document, filename, folder, options: baseOptions, pages }: PDFExportOptions): Promise<string> {
     DEV_LOG && console.log('exportPDFAsync', pages.length, folder, filename);
     if (!filename) {
         filename = getFileNameForDocument(document) + PDF_EXT;
+    }
+    if (!folder) {
+        folder = knownFolders.temp().path;
     }
     if (__ANDROID__) {
         await requestStoragePermission();

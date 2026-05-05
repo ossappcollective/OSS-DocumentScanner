@@ -22,13 +22,14 @@
 
     async function saveDocumentTitle(event) {
         try {
+            const newValue = editingTitleTextField.nativeElement.text;
             if (onSave) {
-                onSave(editingTitleTextField.nativeElement.text);
+                onSave(newValue);
             } else {
                 editingTitleTextField.nativeElement.clearFocus();
                 await (document || folder).save(
                     {
-                        name: editingTitleTextField.nativeElement.text
+                        name: newValue
                     },
                     true,
                     true
@@ -62,17 +63,17 @@
 </script>
 
 <CActionBar backgroundColor={colorBackground} {buttonsDefaultVisualState} {labelsDefaultVisualState} modalWindow={true} onGoBack={onInnerGoBack} orceCanGoBack={true} title={null} {...$$restProps}>
-    <textfield
-        bind:this={editingTitleTextField}
-        slot="center"
-        backgroundColor="transparent"
-        col={1}
-        defaultVisualState={labelsDefaultVisualState}
-        android:padding="4 0 4 0"
-        text={(document || folder).name}
-        verticalTextAlignment="center"
-        on:returnPress={saveDocumentTitle}
-        on:layoutChanged={onTextFieldFocus} />
-    <mdbutton class="actionBarButton" defaultVisualState={buttonsDefaultVisualState} text="mdi-content-save" variant="text" on:tap={saveDocumentTitle} />
+    <gridlayout slot="center" col={1} columns="*,auto">
+        <textfield
+            bind:this={editingTitleTextField}
+            backgroundColor="transparent"
+            defaultVisualState={labelsDefaultVisualState}
+            android:padding="4 0 4 0"
+            text={(document || folder).name}
+            verticalTextAlignment="center"
+            on:returnPress={saveDocumentTitle}
+            on:layoutChanged={onTextFieldFocus} />
+        <mdbutton class="actionBarButton" col={1} defaultVisualState={buttonsDefaultVisualState} text="mdi-content-save" variant="text" on:tap={saveDocumentTitle} />
+    </gridlayout>
     <slot />
 </CActionBar>

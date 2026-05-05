@@ -1,22 +1,22 @@
 <svelte:options accessors />
 
 <script lang="ts">
+    import { Template } from '@nativescript-community/svelte-native/components';
+    import { NativeViewElementNode } from '@nativescript-community/svelte-native/dom';
     import { CheckBox } from '@nativescript-community/ui-checkbox';
     import { CollectionView } from '@nativescript-community/ui-collectionview';
     import { closeBottomSheet } from '@nativescript-community/ui-material-bottomsheet/svelte';
     import { VerticalPosition } from '@nativescript-community/ui-popover';
     import { View } from '@nativescript/core';
-    import { Template } from '@nativescript-community/svelte-native/components';
-    import { NativeViewElementNode } from '@nativescript-community/svelte-native/dom';
+    import ListItemAutoSize from '@shared/components/ListItemAutoSize.svelte';
+    import SettingsSlider from '@shared/components/SettingsSlider.svelte';
+    import { showError } from '@shared/utils/showError';
     import { lc } from '~/helpers/locale';
     import { MatricesTypes } from '~/utils/color_matrix';
-    import { DEFAULT_BRIGHTNESS, DEFAULT_COLORMATRIX, DEFAULT_COLORTYPE, DEFAULT_CONTRAST, DEFAULT_TRANSFORM, FILTER_COL_WIDTH, FILTER_ROW_HEIGHT } from '~/utils/constants';
+    import { DEFAULT_BRIGHTNESS, DEFAULT_COLORMATRIX, DEFAULT_COLORTYPE, DEFAULT_CONTRAST, FILTER_COL_WIDTH, FILTER_ROW_HEIGHT } from '~/utils/constants';
     import { TRANSFORMS } from '~/utils/localized_constant';
-    import { showError } from '@shared/utils/showError';
     import { ColorMatricesTypes, getColorMatrix, showMatrixLevelPopover, showSlidersPopover } from '~/utils/ui';
     import { colors, screenHeightDips, windowInset } from '~/variables';
-    import ListItem from './ListItem.svelte';
-    import ListItemAutoSize from './ListItemAutoSize.svelte';
 
     // technique for only specific properties to get updated on store change
     $: ({ colorPrimary, colorSurfaceContainer } = $colors);
@@ -182,18 +182,28 @@
             <label class="sectionBigHeader" text={lc('transformations')} />
             <stacklayout>
                 {#each TRANSFORMS as item (item.id)}
-                    <ListItem columns="*,auto" height={70} subtitle={item.subtitle} title={item.name} on:tap={(e) => onTransformTap(item, e)}>
-                        <checkbox
-                            id="checkbox"
-                            checked={transforms.indexOf(item.id) !== -1}
-                            col={2}
-                            ios:marginRight={0}
-                            verticalAlignment="center"
-                            on:checkedChange={(e) => onCheckedChanged(item, e)} />
-                    </ListItem>
+                    <ListItemAutoSize {item} on:tap={(e) => onTransformTap(item, e)}>
+                        <checkbox id="checkbox" checked={transforms.indexOf(item.id) !== -1} col={1} verticalAlignment="center" on:checkedChange={(e) => onCheckedChanged(item, e)} />
+                    </ListItemAutoSize>
                 {/each}
-                <ListItemAutoSize rightValue={brightness.toFixed(2)} title={lc('brightness')} on:tap={editBrightnessContrast} />
-                <ListItemAutoSize rightValue={contrast.toFixed(2)} title={lc('contrast')} on:tap={editBrightnessContrast} />
+
+                <SettingsSlider
+                    formatter={(v) => (v / 100).toFixed(2)}
+                    max={500}
+                    min={-100}
+                    onChange={(value) => (brightness = value / 100)}
+                    step={1}
+                    title={lc('brightness')}
+                    value={Math.round(Math.max(-1, Math.min(brightness ?? DEFAULT_BRIGHTNESS, 5)) * 100)} />
+
+                <SettingsSlider
+                    formatter={(v) => (v / 100).toFixed(2)}
+                    max={500}
+                    min={-100}
+                    onChange={(value) => (contrast = value / 100)}
+                    step={1}
+                    title={lc('contrast')}
+                    value={Math.round(Math.max(-1, Math.min(contrast ?? DEFAULT_CONTRAST, 4)) * 100)} />
             </stacklayout>
             <label class="sectionBigHeader" text={lc('filters')} />
             <collectionview bind:this={collectionView} colWidth={FILTER_COL_WIDTH} height={FILTER_ROW_HEIGHT} items={filters} orientation="horizontal">

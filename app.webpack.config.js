@@ -262,7 +262,17 @@ module.exports = (env, params = {}) => {
     const symbolsParser = require('scss-symbols-parser');
     const mdiSymbols = symbolsParser.parseSymbols(readFileSync(resolve(projectRoot, 'node_modules/@mdi/font/scss/_variables.scss')).toString());
     const mdiIcons = JSON.parse(`{${mdiSymbols.variables[mdiSymbols.variables.length - 1].value.replace(/" (F|0)(.*?)([,\n]|$)/g, '": "$1$2"$3')}}`);
-    const scssPrepend = `$mdiFontFamily: ${midFontFamily};
+
+    const appSymbols = symbolsParser.parseSymbols(readFileSync(resolve(projectRoot, 'css/variables.scss')).toString());
+    const appIcons = {};
+    appSymbols.variables
+        .filter((v) => v.name.startsWith('$icon-'))
+        .forEach((v) => {
+            appIcons[v.name.replace('$icon-', '')] = String.fromCharCode(parseInt(v.value.slice(2, -1), 16));
+        });
+
+    const scssPrepend = `$appFontFamily: app;
+    $mdiFontFamily: ${midFontFamily};
     `;
     const scssLoaderRuleIndex = config.module.rules.findIndex((r) => r.test && r.test.toString().indexOf('scss') !== -1);
     config.module.rules.splice(
@@ -354,7 +364,15 @@ module.exports = (env, params = {}) => {
                     replace: appId,
                     flags: 'g'
                 }
-            }
+            },
+            {
+                loader: 'string-replace-loader',
+                options: {
+                    search: 'app-([a-z0-9-_]+)',
+                    replace: (match, p1, offset, str) => appIcons[p1] || match,
+                    flags: 'g'
+                }
+            },
         ]
     });
     // we remove default rules

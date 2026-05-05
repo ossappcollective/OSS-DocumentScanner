@@ -53,6 +53,14 @@ Ensure deps are installed
 
 Setup
 
+### run_sh
+
+```sh
+[bundle exec] fastlane run_sh
+```
+
+Run command in fastlane "env"
+
 ### prepare
 
 ```sh

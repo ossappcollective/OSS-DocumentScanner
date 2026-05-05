@@ -63,8 +63,6 @@ export const SERVICES_TYPE_MAP: { [key in SYNC_TYPES]: typeof BaseSyncService } 
 };
 
 const TAG = '[SyncWorker]';
-const OLD_SETTINGS_KEY = 'webdav_config';
-DEV_LOG && console.log(TAG, 'main');
 
 function findArrayDiffs<S, T>(array1: S[], array2: T[], compare: (a: S, b: T) => boolean) {
     const union: S[] = [];
@@ -108,11 +106,14 @@ export default class SyncWorker extends BaseWorker {
         if (!documentsService) {
             documentsService = new DocumentsService();
             DEV_LOG && console.warn('SyncWorker', 'handleStart', documentsService.id, event.data.nativeData.db);
-            documentsService.notify = (e) => {
+            documentsService.notify = (e: any) => {
                 if (e.eventName === 'started') {
                     return;
                 }
                 const { object, ...other } = e;
+                if (other.changedProps) {
+                    other.changedProps = [...other.changedProps];
+                }
                 this.notify({ ...other, target: 'documentsService', object: object === this ? undefined : object });
             };
             setDocumentsService(documentsService);
@@ -345,6 +346,17 @@ export default class SyncWorker extends BaseWorker {
                             }
                         }
                         ApplicationSettings.remove(deleteKey);
+
+                        for (let index = 0; index < toBeSyncDocuments.length; index++) {
+                            const doc = toBeSyncDocuments[index];
+                            const canBeSynced = await this.syncDocumentOnRemote(doc, service);
+                            if (canBeSynced === false) {
+                                missingRemoteDocuments.push(doc);
+                                continue;
+                            }
+                            currentItemIndex++;
+                            this.updateSyncProgress('data', currentItemIndex, totalItemsToSync, doc.id, doc.name);
+                        }
                         for (let index = 0; index < missingRemoteDocuments.length; index++) {
                             const doc = missingRemoteDocuments[index];
                             await service.addDocumentToRemote(doc);
@@ -352,6 +364,7 @@ export default class SyncWorker extends BaseWorker {
                             currentItemIndex++;
                             this.updateSyncProgress('data', currentItemIndex, totalItemsToSync, doc.id, doc.name);
                         }
+
                         for (let index = 0; index < missingLocalDocuments.length; index++) {
                             const data = await service.importDocumentFromRemote(missingLocalDocuments[index]);
                             if (data) {
@@ -362,11 +375,6 @@ export default class SyncWorker extends BaseWorker {
                                 currentItemIndex++;
                                 this.updateSyncProgress('data', currentItemIndex, totalItemsToSync, doc.id, doc.name);
                             }
-                        }
-                        for (let index = 0; index < toBeSyncDocuments.length; index++) {
-                            await this.syncDocumentOnRemote(toBeSyncDocuments[index], service);
-                            currentItemIndex++;
-                            this.updateSyncProgress('data', currentItemIndex, totalItemsToSync, toBeSyncDocuments[index].id, toBeSyncDocuments[index].name);
                         }
                     } else {
                         if (withFolders || (event && (event.eventName === EVENT_FOLDER_ADDED || event.eventName === EVENT_FOLDER_UPDATED))) {
@@ -471,9 +479,16 @@ export default class SyncWorker extends BaseWorker {
     }
 
     async syncDocumentOnRemote(document: OCRDocument, service: BaseDataSyncService) {
-        const dataJSON = JSON.parse(await service.getFileFromRemote(DOCUMENT_DATA_FILENAME, document)) as OCRDocument;
+        let dataJSON: OCRDocument;
+        try {
+            dataJSON = JSON.parse(await service.getFileFromRemote(DOCUMENT_DATA_FILENAME, document)) as OCRDocument;
+        } catch (error) {
+            if (error.statusCode === 404) {
+                return false;
+            }
+            throw error;
+        }
         const docDataFolder = documentsService.dataFolder.getFolder(document.id);
-        // DEV_LOG && console.info('syncDocumentOnRemote', document.id, document.modifiedDate, dataJSON.modifiedDate);
 
         // Check if this is a legacy document (no .valid marker yet) for migration
         const hasValidMarker = await service.hasValidMarker(document.id);
@@ -835,13 +850,25 @@ export default class SyncWorker extends BaseWorker {
     }
 
     async syncPDFDocuments({ event, force = false }: { force; event: DocumentEvents }) {
-        const localDocuments = event?.['doc'] ? [event['doc'] as OCRDocument] : ((event?.['documents'] as OCRDocument[]) ?? (await documentsService.documentRepository.search()));
+        if (event?.eventName === EVENT_DOCUMENT_UPDATED) {
+            // we ignore this event
+            // pages will be updated independently
+            return;
+        }
+        let localDocuments = event?.['pages']
+            ? [{ document: event['doc'] as OCRDocument, pages: event['pages'] as OCRPage[] }]
+            : event?.['pageIndex'] !== undefined
+              ? [{ document: event['doc'] as OCRDocument, pages: [event['doc']['pages'][event['pageIndex']]] as OCRPage[] }]
+              : (await documentsService.documentRepository.search()).map((d) => ({ document: d, pages: d.pages }));
+
+        // this should not happened but i got bug reports with null document. cant reproduce
+        localDocuments = localDocuments.filter((d) => !!d.document);
         DEV_LOG &&
             console.log(
                 'Sync',
                 'syncPDFDocuments',
                 event?.eventName,
-                localDocuments.map((d) => d.id)
+                localDocuments.map((d) => d.document.id)
             );
 
         await Promise.all(
@@ -852,8 +879,9 @@ export default class SyncWorker extends BaseWorker {
                     if (!service.shouldSync(force, event)) {
                         return;
                     }
+                    const deleteKey = getRemoteDeleteDocumentSettingsKey(service);
                     // just test if we have local document marked as needing update
-                    const documentsToSync = localDocuments.filter((d) => force || (d._synced & service.syncMask) === 0);
+                    const documentsToSync = localDocuments.filter((d) => force || (d.document._synced & service.syncMask) === 0);
                     // DEV_LOG && console.log('syncImageDocuments', 'documentsToSync', documentsToSync.length);
                     if (documentsToSync.length) {
                         await service.ensureRemoteFolder();
@@ -868,25 +896,34 @@ export default class SyncWorker extends BaseWorker {
 
                         for (let index = 0; index < documentsToSync.length; index++) {
                             const doc = documentsToSync[index];
+                            const pages = doc.pages.filter((p) => !!p);
+                            const document = doc.document;
                             //see if we need to OCR
-                            if (service.OCREnabled && service.OCRLanguages.length) {
+                            if (service.OCREnabled && service.OCRLanguages.length && event?.eventName !== EVENT_DOCUMENT_PAGE_DELETED) {
                                 const OCRDataPath = path.join(baseOCRDataPath, service.OCRDataType);
                                 // we need to make sure the OCR update wont trigger another sync or we will end up in an endless loop
-                                await Promise.all(doc.pages.map(async (p, index) => doc.ocrPage({ pageIndex: index, language: service.OCRLanguages.join('+'), dataPath: OCRDataPath, notify: false })));
+                                await Promise.all(
+                                    pages.map(async (p, index) => document.ocrPage({ pageIndex: index, language: service.OCRLanguages.join('+'), dataPath: OCRDataPath, notify: false }))
+                                );
                             }
 
-                            const name = service.getPDFName(doc);
+                            const name = service.getPDFName(document);
                             const existing = remoteFiles.find((r) => r.basename === name);
-                            DEV_LOG && console.info('syncPDFDocuments', 'test', doc.id, existing?.lastmod, doc.modifiedDate);
-                            if (!existing || new Date(existing.lastmod).valueOf() < doc.modifiedDate) {
-                                await service.writePDF(doc, name, service.useFoldersStructure && doc.folders?.length ? await documentsService.folderRepository.findFolderById(doc.folders[0]) : null);
+                            DEV_LOG && console.info('syncPDFDocuments', 'test', document.id, existing?.lastmod, document.modifiedDate);
+                            if (!existing || new Date(existing.lastmod).valueOf() < document.modifiedDate) {
+                                await service.writePDF(
+                                    document,
+                                    name,
+                                    service.useFoldersStructure && document.folders?.length ? await documentsService.folderRepository.findFolderById(document.folders[0]) : null
+                                );
                             }
-                            await doc.save({ _synced: doc._synced | service.syncMask });
+                            await document.save({ _synced: document._synced | service.syncMask });
                             currentDocIndex++;
-                            this.updateSyncProgress('pdf', currentDocIndex, totalDocuments, doc.id, doc.name);
+                            this.updateSyncProgress('pdf', currentDocIndex, totalDocuments, document.id, document.name);
                         }
                     }
                     DEV_LOG && console.log('syncPDFDocuments', 'handling service done', service.type, service.id, service.autoSync, force);
+                    ApplicationSettings.remove(deleteKey);
                     this.onServiceSyncDone(service);
                 })
         );

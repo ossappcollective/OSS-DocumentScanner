@@ -1,6 +1,6 @@
 <script lang="ts">
     import { Template } from '@nativescript-community/svelte-native/components';
-    import ListItemAutoSize from '~/components/common/ListItemAutoSize.svelte';
+    import ListItemAutoSize from '@shared/components/ListItemAutoSize.svelte';
     import { openLink } from '~/utils/ui';
     // technique for only specific properties to get updated on store change
 
@@ -68,7 +68,7 @@
 <gesturerootview rows="auto">
     <collectionView id="trackingScrollView" height="300" ios:contentInsetAdjustmentBehavior={2} itemIdGenerator={(item, i) => i} {items}>
         <Template let:item>
-            <ListItemAutoSize subtitle={item.moduleUrl} title={item.moduleName} on:tap={() => onTap(item)} />
+            <ListItemAutoSize item={{ itle: item.moduleName, subtitle: item.moduleUrl }} on:tap={() => onTap(item)} />
         </Template>
     </collectionView>
 </gesturerootview>

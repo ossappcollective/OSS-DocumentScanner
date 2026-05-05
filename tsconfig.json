@@ -16,4 +16,5 @@
         }
     },
     "include": ["app/**/*", "tools/app/**/*", "typings/*.d.ts", "plugin-nativeprocessor/*.ts", "plugin-nativeprocessor/typings", "plugin-zip/*.ts", "plugin-zip/typings", "plugin-shared/*.ts", "plugin-shared/typings"],
+    "exclude": ["app/**/*.test.ts"]
 }

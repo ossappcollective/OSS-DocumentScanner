@@ -2,6 +2,7 @@ package com.akylas.documentscanner
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Build
 import android.service.quicksettings.TileService
 import android.util.Log
 
@@ -22,7 +23,11 @@ class QuickToggleService : TileService() {
         // Set flags to bring existing activity to front if running
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_CLEAR_TOP)
 
-        startActivityAndCollapse(PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE))
+        if (Build.VERSION.SDK_INT < 34) {
+            startActivityAndCollapse(intent)
+        } else {
+            startActivityAndCollapse(PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE))
+        }
     }
 
     override fun onStartListening() {

@@ -1,6 +1,6 @@
 <script context="module" lang="ts">
     import PopoverBackgroundView from '@shared/components/PopoverBackgroundView.svelte';
-    import IconButton from './IconButton.svelte';
+    import IconButton from '@shared/components/IconButton.svelte';
     import { colors } from '~/variables';
 </script>
 

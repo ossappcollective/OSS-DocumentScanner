@@ -82,7 +82,7 @@ export class DocFolder {
         await documentsService.folderRepository.update(this, data);
         Object.assign(this, data);
         if (notify) {
-            documentsService.notify({ eventName: EVENT_FOLDER_UPDATED, folder: this } as FolderUpdatedEventData);
+            documentsService.notify({ eventName: EVENT_FOLDER_UPDATED, folder: this, changedProps: new Set(Object.keys(data)) } as FolderUpdatedEventData);
         }
     }
 
@@ -115,6 +115,9 @@ export interface Document {
     pages?: OCRPage[];
     extra?: DocumentExtra;
     db_version?: number;
+    favorite?: number;
+    usedDate?: number;
+    useCount?: number;
 }
 
 let documentsService: DocumentsService;
@@ -154,6 +157,9 @@ export class OCRDocument extends Observable implements Document {
     tags: string[];
     folders: number[];
     _synced: number;
+    favorite: number = 0;
+    usedDate?: number;
+    useCount: number = 0;
 
     extra?: DocumentExtra;
 
@@ -431,13 +437,16 @@ export class OCRDocument extends Observable implements Document {
         //compute diff update
         const page = this.pages[pageIndex];
         if (page) {
-            DEV_LOG && console.log('updatePage', pageIndex, JSON.stringify(data), page.toString());
+            // DEV_LOG && console.log('updatePage', pageIndex, JSON.stringify(data), page.toString());
             if (Object.keys(data).length === 0) {
                 return;
             }
             await documentsService.pageRepository.update(page, data);
             // we save the document so that the modifiedDate gets changed
             // no need to notify though
+
+            // save needs to be before onPageUpdated so that _sync state is updated
+            // before the sync services gets the event
             if (saveDoc) {
                 await this.save({}, true, notify);
             }
@@ -485,7 +494,7 @@ export class OCRDocument extends Observable implements Document {
         return this.#observables;
     }
 
-    async save(data: Partial<OCRDocument> = {}, updateModifiedDate = false, notify = true) {
+    async save(data: Partial<OCRDocument> = {}, updateModifiedDate = false, notify = true, eventData = {}) {
         DEV_LOG && console.log('OCRDocument', 'save', JSON.stringify(data), updateModifiedDate, notify);
         if (data.pagesOrder) {
             this.pages = this.pages.sort(function (a, b) {
@@ -499,7 +508,11 @@ export class OCRDocument extends Observable implements Document {
         }
         await documentsService.documentRepository.update(this, data, updateModifiedDate);
         if (notify) {
-            documentsService.notify({ eventName: EVENT_DOCUMENT_UPDATED, doc: this, updateModifiedDate } as DocumentUpdatedEventData);
+            const changedProps = new Set(Object.keys(data));
+            if (updateModifiedDate) {
+                changedProps.add('modifiedDate');
+            }
+            documentsService.notify({ eventName: EVENT_DOCUMENT_UPDATED, doc: this, updateModifiedDate, changedProps, ...eventData } as DocumentUpdatedEventData);
         }
     }
 
@@ -523,7 +536,7 @@ export class OCRDocument extends Observable implements Document {
 
     async updatePageCrop(pageIndex: number, quad: Quad) {
         const page = this.pages[pageIndex];
-        DEV_LOG && console.log('updatePageCrop', this.id, pageIndex, quad, page.imagePath);
+        // DEV_LOG && console.log('updatePageCrop', this.id, pageIndex, quad, page.imagePath);
         const file = File.fromPath(page.imagePath);
         const imageExportSettings = getImageExportSettings();
         const compressFormat = page.sourceImagePath.toLowerCase().endsWith('.png') ? 'png' : imageExportSettings.imageFormat;

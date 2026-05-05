@@ -1,10 +1,13 @@
 <script context="module" lang="ts">
+    import { Template } from '@nativescript-community/svelte-native/components';
     import { NativeViewElementNode } from '@nativescript-community/svelte-native/dom';
     import { TextFieldProperties } from '@nativescript-community/ui-material-textfield';
     import { ApplicationSettings, Color, ObservableArray, Page } from '@nativescript/core';
     import { closeModal } from '@shared/utils/svelte/ui';
     import { Writable, get, writable } from 'svelte/store';
     import CActionBar from '~/components/common/CActionBar.svelte';
+    import OCRSettingsBottomSheet from '~/components/ocr/OCRSettingsBottomSheet.svelte';
+    import PDFSyncSettingsView from '~/components/settings/sync/PDFSyncSettingsView.svelte';
     import SyncSettingsCollectionView from '~/components/settings/sync/SyncSettingsCollectionView.svelte';
     import { lc } from '~/helpers/locale';
     import { getPDFDefaultExportOptions } from '~/services/pdf/PDFCanvas';
@@ -147,6 +150,16 @@
     <gridlayout class="pageContent" rows="auto,*">
         <SyncSettingsCollectionView {items} row={1} bind:store bind:updateItem>
             <slot />
+            <Template key="pdfoptions" let:item>
+                <PDFSyncSettingsView {store} />
+            </Template>
+            <Template key="pdfoptions" let:item>
+                <PDFSyncSettingsView {store} on:uppdate={() => updateItem({ type: 'pdfoptions' }, 'type')} />
+            </Template>
+
+            <Template key="ocroptions">
+                <OCRSettingsBottomSheet onlySettings={true} bind:dataType={$store.OCRDataType} bind:languages={$store.OCRLanguages} />
+            </Template>
         </SyncSettingsCollectionView>
 
         <CActionBar canGoBack modalWindow={true} title={lc('pdf_sync_settings')}>

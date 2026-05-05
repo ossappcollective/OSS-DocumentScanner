@@ -1,4 +1,4 @@
-import { isObject, isString } from '@nativescript/core/utils';
+import { isObject, isString, wrapNativeException } from '@nativescript/core/utils';
 import { Optional } from '@nativescript/core/utils/typescript-utils';
 import { ApplicationSettings, EventData, File, Folder, Observable, knownFolders, path } from '@nativescript/core';
 import NSQLDatabase from '@shared/db/NSQLDatabase';
@@ -6,8 +6,8 @@ import { doInBatch } from '@shared/utils/batch';
 import SqlQuery from 'kiss-orm/dist/Queries/SqlQuery';
 import CrudRepository from 'kiss-orm/dist/Repositories/CrudRepository';
 import { DocFolder, Document, IDocFolder, OCRDocument, OCRPage, Page, Tag } from '~/models/OCRDocument';
-import { PKPass } from '~/models/PKPass';
-import { EVENT_DOCUMENT_DELETED, SETTINGS_ROOT_DATA_FOLDER } from '~/utils/constants';
+import { PKPass, PKPassType } from '~/models/PKPass';
+import { EVENT_DOCUMENT_DELETED, EVENT_DOCUMENT_USE_COUNT, SETTINGS_ROOT_DATA_FOLDER } from '~/utils/constants';
 import { groupByArray } from '@shared/utils';
 import DatabaseInterface from 'kiss-orm/dist/Databases/DatabaseInterface';
 import QueryIdentifier from 'kiss-orm/dist/Queries/QueryIdentifier';
@@ -57,6 +57,20 @@ function escapeLike(val: string) {
     }
     // escape wildcard chars for LIKE patterns
     return val.replace(/[\\%_]/g, (m) => '\\' + m);
+}
+
+function tableColumnAlterPromise(query: SqlQuery) {
+    return async (sequenceDb: DatabaseInterface) => {
+        try {
+            await sequenceDb.query(query);
+        } catch (err) {
+            const error = wrapNativeException(err);
+            if (error.message.indexOf('duplicate column name') !== -1) {
+                return;
+            }
+            throw error;
+        }
+    };
 }
 
 export class BaseRepository<T, U = T, V = any> extends CrudRepository<T, U, V> {
@@ -203,6 +217,10 @@ export class PKPassRepository extends BaseRepository<PKPass, PKPass> {
         });
     }
 
+    migrations = {
+        addPassType: sql`ALTER TABLE PKPass ADD COLUMN passType TEXT NOT NULL DEFAULT 'pkpass'`
+    };
+
     async createTables() {
         return this.database.query(sql`
         CREATE TABLE IF NOT EXISTS "PKPass" (
@@ -225,6 +243,7 @@ export class PKPassRepository extends BaseRepository<PKPass, PKPass> {
             cleanUndefined({
                 id: pkpass.id,
                 page_id: pkpass.page_id,
+                passType: pkpass.passType || PKPassType.PKPass,
                 passData: JSON.stringify(pkpass.passData),
                 images: JSON.stringify(pkpass.images),
                 // passJsonPath: pkpass.passJsonPath,
@@ -261,7 +280,7 @@ export class PKPassRepository extends BaseRepository<PKPass, PKPass> {
 
     async createModelFromAttributes(attributes: any): Promise<PKPass> {
         const { images, passData, ...other } = attributes;
-        const model = new PKPass(attributes.id, attributes.page_id || attributes.document_id); // Support both for migration
+        const model = new PKPass(attributes.id, attributes.page_id || attributes.document_id, attributes.passType || PKPassType.PKPass); // Support both for migration
         Object.assign(model, {
             ...other,
             passData: typeof passData === 'string' ? JSON.parse(passData) : passData,
@@ -489,7 +508,10 @@ export class DocumentRepository extends BaseRepository<OCRDocument, Document> {
                 createdDate BIGINT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
                 modifiedDate BIGINT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
                 name TEXT,
-                _synced INTEGER DEFAULT 0
+                _synced INTEGER DEFAULT 0,
+                favorite INTEGER NOT NULL DEFAULT 0,
+                usedDate BIGINT,
+                useCount INTEGER NOT NULL DEFAULT 0
                 );
         `),
             this.database.query(sql`
@@ -516,6 +538,9 @@ export class DocumentRepository extends BaseRepository<OCRDocument, Document> {
     migrations = {
         addExtra: sql`ALTER TABLE Document ADD COLUMN extra TEXT`,
         addPagesOrder: sql`ALTER TABLE Document ADD COLUMN pagesOrder TEXT`,
+        addFavorite: tableColumnAlterPromise(sql`ALTER TABLE Document ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0`),
+        addUsedDate: tableColumnAlterPromise(sql`ALTER TABLE Document ADD COLUMN usedDate BIGINT`),
+        addUseCount: tableColumnAlterPromise(sql`ALTER TABLE Document ADD COLUMN useCount INTEGER NOT NULL DEFAULT 0`),
 
         updateDocSearchAccentInsensitive: (sequenceDb: DatabaseInterface) =>
             new Promise<void>(async (resolve, reject) => {
@@ -597,6 +622,8 @@ export class DocumentRepository extends BaseRepository<OCRDocument, Document> {
             } else if (k === 'name') {
                 toUpdate[k] = value;
                 toUpdate.nameSearch = normalizeSearchString(value);
+            } else if (k === 'favorite' || k === 'usedDate' || k === 'useCount') {
+                toUpdate[k] = value;
             } else if (typeof value === 'object' || Array.isArray(value)) {
                 toUpdate[k] = JSON.stringify(value);
             } else {
@@ -608,6 +635,15 @@ export class DocumentRepository extends BaseRepository<OCRDocument, Document> {
         Object.assign(document, toSave);
         // DEV_LOG && console.log('update doc', toSave, document._synced);
         return document;
+    }
+
+    async incrementUsage(document: OCRDocument) {
+        const usedDate = Date.now();
+        const useCount = (document.useCount || 0) + 1;
+        await super.update(document, { usedDate, useCount });
+        document.usedDate = usedDate;
+        document.useCount = useCount;
+        documentsService.notify({ eventName: EVENT_DOCUMENT_USE_COUNT, documents: [document] } as SingleDocumentEventData);
     }
     async addTag(document: OCRDocument, tagId: string) {
         try {
@@ -647,13 +683,18 @@ export class DocumentRepository extends BaseRepository<OCRDocument, Document> {
         return result;
     }
     async findDocuments({ filter, folder, omitThoseWithFolders = false, order = 'id DESC' }: { filter?: string; folder?: DocFolder; omitThoseWithFolders?: boolean; order?: string } = {}) {
+        // Build the secondary sort expression. All columns are on the Document alias "d".
+        const secondaryOrder = `d.${order}`;
+        // Always sort favorites first, then by the user-selected key
+        const orderBy = new SqlQuery([`d.favorite DESC, ${secondaryOrder}`]);
+
         const args = {
             select: new SqlQuery([
                 `d.*,
             group_concat(f.id, '${FOLDERS_SEPARATOR}') AS folders`
             ]),
             from: sql`Document d`,
-            orderBy: new SqlQuery([`d.${order}`]),
+            orderBy,
             groupBy: sql`d.id`
         } as any;
 
@@ -740,37 +781,34 @@ LEFT JOIN
 
 export type DocumentEventData = Optional<EventData<Observable>, 'object'> & { fromWorker?: true };
 
-export interface DocumentAddedEventData extends DocumentEventData {
+export interface SingleDocumentEventData extends DocumentEventData {
     doc?: OCRDocument;
     folder?: DocFolder;
 }
-export interface DocumentMovedFolderEventData extends DocumentEventData {
-    doc?: OCRDocument;
-    folder?: DocFolder;
+export type DocumentAddedEventData = SingleDocumentEventData;
+export interface DocumentMovedFolderEventData extends SingleDocumentEventData {
     oldFolderId?: number;
 }
 export interface DocumentFolderAddedEventData extends DocumentEventData {
     folder?: DocFolder;
 }
-export interface DocumentPagesAddedEventData extends DocumentEventData {
-    doc?: OCRDocument;
+export interface FolderUpdatedEventData extends DocumentEventData {
+    folder?: DocFolder;
+    changedProps: Set<string>;
+}
+export interface DocumentPagesAddedEventData extends SingleDocumentEventData {
     pages?: OCRPage[];
 }
-export interface DocumentPageDeletedEventData extends DocumentEventData {
-    doc?: OCRDocument;
+export interface DocumentPageDeletedEventData extends SingleDocumentEventData {
     pageIndex?: number;
 }
-export interface DocumentPageUpdatedEventData extends DocumentEventData {
-    doc?: OCRDocument;
+export interface DocumentPageUpdatedEventData extends SingleDocumentEventData {
     pageIndex?: number;
     imageUpdated?: boolean;
 }
-export interface DocumentUpdatedEventData extends DocumentEventData {
-    doc?: OCRDocument;
+export interface DocumentUpdatedEventData extends SingleDocumentEventData {
     updateModifiedDate?: boolean;
-}
-export interface FolderUpdatedEventData extends DocumentEventData {
-    folder?: DocFolder;
+    changedProps: Set<string>;
 }
 export interface DocumentDeletedEventData extends DocumentEventData {
     documents?: OCRDocument[];
@@ -850,7 +888,9 @@ export class DocumentsService extends Observable {
             this.db = new NSQLDatabase(filePath, {
                 // for now it breaks
                 // threading: true,
-                transformBlobs: false
+                transformBlobs: false,
+                //TODO: it seems ocrData can be sometimes too big. Maybe the best would be not to store it in db
+                cursorWindowSize: 4 * 1024 * 1024
             } as any);
         }
 

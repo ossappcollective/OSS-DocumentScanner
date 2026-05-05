@@ -78,8 +78,8 @@
     } from '~/utils/ui';
     import { colors, fontScale, fonts, hasCamera, isLandscape, onFontScaleChanged, screenHeightDips, screenWidthDips, windowInset } from '~/variables';
     import EditNameActionBar from '~/components/common/EditNameActionBar.svelte';
-    import IconButton from '~/components/common/IconButton.svelte';
-    import ListItemAutoSize from '~/components/common/ListItemAutoSize.svelte';
+    import IconButton from '@shared/components/IconButton.svelte';
+    import ListItemAutoSize from '@shared/components/ListItemAutoSize.svelte';
     import PKPassView from '~/components/pkpass/PKPassView.svelte';
 
     const rowMargin = 8;
@@ -299,6 +299,13 @@
     }
     function onSelectedIndex(event) {
         currentQRCodeIndex = event.object.selectedIndex;
+    }
+    function geAllPages() {
+        const selected: { page: OCRPage; document: OCRDocument }[] = [];
+        items.forEach((d, index) => {
+            selected.push({ page: d.page, document });
+        });
+        return selected;
     }
     function getSelectedPages() {
         const selected: { page: OCRPage; document: OCRDocument }[] = [];
@@ -680,6 +687,7 @@
         documentsService.on(EVENT_DOCUMENT_PAGES_ADDED, onPagesAdded);
 
         shortcutService.updateShortcuts(document);
+        documentsService.documentRepository.incrementUsage(document).catch(() => {});
         // refresh();
     });
     onDestroy(() => {
@@ -770,6 +778,7 @@
                 onClose: async (item) => {
                     try {
                         let result;
+                        DEV_LOG && console.log('item.id', item.id);
                         switch (item.id) {
                             case 'share':
                                 result = await showImageExportPopover(event);
@@ -825,24 +834,27 @@
 
             const allOptions = [
                 { id: 'rename', name: lc('rename'), icon: 'mdi-rename' },
-                { id: 'select_all', name: lc('select_all'), icon: 'mdi-select-all' },
-                { id: 'reorder', name: lc('reorder_pages'), icon: 'mdi-reorder-horizontal' }
+                { id: 'favorite', name: lc('toggle_favorite'), icon: document.favorite === 1 ? 'mdi-star' : 'mdi-star-outline' }
             ] as any[];
 
             if (!isPKPassDocument) {
                 if (hasImages) {
                     allOptions.push(
                         ...[
+                            { id: 'select_all', name: lc('select_all'), icon: 'mdi-select-all' },
+                            { id: 'reorder', name: lc('reorder_pages'), icon: 'mdi-reorder-horizontal' },
                             { id: 'transform', name: lc('transform_images'), icon: 'mdi-auto-fix' },
                             { id: 'ocr', name: lc('ocr_document'), icon: 'mdi-text-recognition' }
                         ]
                     );
                 }
+            } else {
+                allOptions.push({ id: 'share', name: lc('share_images'), icon: 'mdi-share-variant' });
             }
             allOptions.push(...[{ id: 'delete', name: lc('delete'), icon: 'mdi-delete', color: colorError }]);
 
             // For PKPass documents, only allow delete (of the whole document)
-            const options = new ObservableArray(isPKPassDocument ? allOptions.filter((opt) => opt.id === 'delete') : allOptions);
+            const options = new ObservableArray(allOptions);
             return showPopoverMenu({
                 options,
                 anchor: event.object,
@@ -852,6 +864,12 @@
                     switch (item.id) {
                         case 'rename':
                             editingTitle = true;
+                            break;
+                        case 'favorite':
+                            await document.save({ favorite: document.favorite === 1 ? 0 : 1 }, false, true);
+                            break;
+                        case 'share':
+                            await showImagePopoverMenu(geAllPages(), event.object);
                             break;
                         case 'select_all':
                             selectAll();
@@ -878,7 +896,7 @@
     }
     async function onAddButton() {
         try {
-            const OptionSelect = (await import('~/components/common/OptionSelect.svelte')).default;
+            const OptionSelect = (await import('@shared/components/OptionSelect.svelte')).default;
             const rowHeight = 58;
             const options = (
                 $hasCamera
@@ -1344,7 +1362,7 @@
 
 <page bind:this={page} id="cardview" actionBarHidden={true} statusBarColor={topBackgroundColor} {statusBarStyle}>
     <gridlayout class="pageContent" backgroundColor={topBackgroundColor} columns={$isLandscape ? 'auto,*' : '*'} rows={$isLandscape ? 'auto,*' : 'auto,auto,*'}>
-        {#if isPKPassDocument}
+        {#if CARD_APP && isPKPassDocument}
             <pager bind:this={pager} items={document.pages} row={2} transformers="zoomOut" on:selectedIndexChange={onSelectedIndex}>
                 <Template let:item>
                     <stacklayout padding="0">
@@ -1492,7 +1510,7 @@
                         </gridlayout>
                     </Template>
                     <Template key="color" let:item>
-                        <ListItemAutoSize fontSize={20} title={lc('color')} on:tap={(event) => changeColor(item, event)}>
+                        <ListItemAutoSize item={{ title: lc('color') }} on:tap={(event) => changeColor(item, event)}>
                             <absolutelayout backgroundColor={topBackgroundColor} borderColor={colorOutline} borderRadius="50%" borderWidth={2} col={1} height={40} marginLeft={10} width={40} />
                         </ListItemAutoSize>
                     </Template>
@@ -1507,7 +1525,7 @@
                                 visibility={editing ? 'visible' : 'collapsed'}
                                 on:tap={(event) => deleteExtraField(item, event)} />
                         </gridlayout>
-                        <ListItemAutoSize columns="*,auto,auto" fontSize={20} rightValue={formatItemValue(item)} title={item.name}></ListItemAutoSize>
+                        <ListItemAutoSize columns="*,auto,auto" item={{ rightValue: formatItemValue(item), title: item.name }}></ListItemAutoSize>
                     </Template>
                     <Template key="qrcode" let:item>
                         <gridlayout columns="auto,*,auto" height={60} padding="4 0 4 10">

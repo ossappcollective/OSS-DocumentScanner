@@ -1,0 +1,3 @@
+Bug fixes:
+- allow to disable crash reports
+- prevent error on startup

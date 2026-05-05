@@ -27,7 +27,7 @@ import { prefs } from '@shared/services/preferences';
 import { securityService } from '~/services/security';
 import { syncService } from '~/services/sync';
 import ZoomOutTransformer from '~/transformers/ZoomOutTransformer';
-import { SETTINGS_APP_VERSION, SETTINGS_SYNC_ON_START } from '~/utils/constants';
+import { SETTINGS_APP_VERSION, SETTINGS_ENABLE_CRASH_REPORT, SETTINGS_SYNC_ON_START } from '~/utils/constants';
 import { startOnCam } from './variables';
 import { CollectionViewTraceCategory } from '@nativescript-community/ui-collectionview';
 import { init as sharedInit } from '@shared/index';
@@ -109,7 +109,10 @@ try {
     CollectionViewElement.register();
     SwipeMenuElement.register();
     DrawerElement.register();
-    startSentry();
+    const shouldEnableSentry = ApplicationSettings.getBoolean(SETTINGS_ENABLE_CRASH_REPORT, PLAY_STORE_BUILD);
+    if (shouldEnableSentry) {
+        startSentry();
+    }
     initialize({ isDownsampleEnabled: true });
     // initialize({ usePersistentCacheKeyStore: true, globalSignatureKey: 'oss-doc-v3' });
 
@@ -124,10 +127,6 @@ try {
         // Trace.addCategories(CollectionViewTraceCategory);
         // Trace.addCategories(ImageViewTraceCategory);
         Trace.enable();
-    }
-    if (__DEV__ && __IOS__) {
-        // RocketSim.loadRocketSimConnect();
-        // DEV_LOG && console.log('loadRocketSimConnect');
     }
 
     let launched = false;

@@ -8,14 +8,14 @@
     import { TextField, TextFieldProperties } from '@nativescript-community/ui-material-textfield';
     import { TextView } from '@nativescript-community/ui-material-textview';
     import { ApplicationSettings, File, ObservableArray, Page, ScrollView, StackLayout, Utils, View, knownFolders, path } from '@nativescript/core';
-    import { Sentry } from '@shared/utils/sentry';
+    import { Sentry, startSentry, stopSentry } from '@shared/utils/sentry';
     import { showError } from '@shared/utils/showError';
     import { navigate } from '@shared/utils/svelte/ui';
     import dayjs from 'dayjs';
     import { Template } from '@nativescript-community/svelte-native/components';
     import { NativeViewElementNode } from '@nativescript-community/svelte-native/dom';
     import CActionBar from '~/components/common/CActionBar.svelte';
-    import ListItemAutoSize from '~/components/common/ListItemAutoSize.svelte';
+    import ListItemAutoSize from '@shared/components/ListItemAutoSize.svelte';
     import { getLocaleDisplayName, l, lc, lu, onLanguageChanged, selectLanguage, slc } from '~/helpers/locale';
     import { getColorThemeDisplayName, getThemeDisplayName, onThemeChanged, selectColorTheme, selectTheme } from '~/helpers/theme';
     import { DocumentsService, documentsService } from '~/services/documents';
@@ -29,6 +29,7 @@
         AUTO_SCAN_DURATION,
         AUTO_SCAN_ENABLED,
         CROP_ENABLED,
+        DEFAULT_CARD_ALWAYS_SHOW_NAME,
         DEFAULT_DRAW_FOLDERS_BACKGROUND,
         DEFAULT_EXPORT_DIRECTORY,
         DEFAULT_FONT_CAM_MIRRORED,
@@ -50,9 +51,11 @@
         PDF_IMPORT_IMAGES,
         PREVIEW_RESIZE_THRESHOLD,
         SETTINGS_ALWAYS_PROMPT_CROP_EDIT,
+        SETTINGS_CARD_ALWAYS_SHOW_NAME,
         SETTINGS_CROP_ENABLED,
         SETTINGS_DOCUMENT_NAME_FORMAT,
         SETTINGS_DRAW_FOLDERS_BACKGROUND,
+        SETTINGS_ENABLE_CRASH_REPORT,
         SETTINGS_FILE_NAME_FORMAT,
         SETTINGS_FILE_NAME_USE_DOCUMENT_NAME,
         SETTINGS_FONT_CAM_MIRRORED,
@@ -79,7 +82,7 @@
     import { createView, getNameFormatHTMLArgs, hideLoading, openLink, showAlertOptionSelect, showLoading, showSettings, showSliderPopover, showSnack } from '~/utils/ui';
     import { restartApp, toggleQuickSetting } from '~/utils/utils';
     import { colors, fontScale, fonts, hasCamera, onFontScaleChanged, windowInset } from '~/variables';
-    import IconButton from '../common/IconButton.svelte';
+    import IconButton from '@shared/components/IconButton.svelte';
     import { share } from '@akylas/nativescript-app-utils/share';
     import { inappItems, presentInAppSponsorBottomsheet } from '@shared/utils/inapp-purchase';
     import OCRSettingsBottomSheet from '../ocr/OCRSettingsBottomSheet.svelte';
@@ -536,6 +539,18 @@
                         description: lc('pdf_sync_desc')
                     }
                 ];
+            case 'debugging':
+                return PLAY_STORE_BUILD
+                    ? [
+                          {
+                              type: 'switch',
+                              id: SETTINGS_ENABLE_CRASH_REPORT,
+                              title: lc('crash_report'),
+                              description: lc('crash_report_desc'),
+                              value: ApplicationSettings.getBoolean(SETTINGS_ENABLE_CRASH_REPORT, PLAY_STORE_BUILD)
+                          }
+                      ]
+                    : [];
             case 'document_naming':
                 return [
                     {
@@ -686,7 +701,14 @@
                 ]
                     .concat(
                         CARD_APP
-                            ? []
+                            ? [
+                                  {
+                                      type: 'switch',
+                                      id: SETTINGS_CARD_ALWAYS_SHOW_NAME,
+                                      title: lc('always_show_card_name'),
+                                      value: ApplicationSettings.getBoolean(SETTINGS_CARD_ALWAYS_SHOW_NAME, DEFAULT_CARD_ALWAYS_SHOW_NAME)
+                                  }
+                              ]
                             : [
                                   {
                                       id: 'setting',
@@ -894,6 +916,19 @@
                         options: () => getSubSettings('sync')
                     }
                 ])
+                .concat(
+                    PLAY_STORE_BUILD
+                        ? [
+                              {
+                                  id: 'sub_settings',
+                                  icon: 'mdi-bug-outline',
+                                  title: lc('debugging'),
+                                  description: lc('debugging_settings_desc'),
+                                  options: () => getSubSettings('debugging')
+                              }
+                          ]
+                        : []
+                )
                 .concat([
                     {
                         id: 'third_party',
@@ -1507,6 +1542,15 @@
                     }
                     break;
                 }
+                case SETTINGS_ENABLE_CRASH_REPORT: {
+                    ApplicationSettings.setBoolean(item.key || item.id, value);
+                    if (value) {
+                        startSentry();
+                    } else {
+                        stopSentry();
+                    }
+                    break;
+                }
                 default:
                     ApplicationSettings.setBoolean(item.key || item.id, value);
                     break;
@@ -1576,45 +1620,35 @@
                 </gridlayout>
             </Template>
             <Template key="sectionheader" let:item>
-                <label class="sectionHeader" text={item.title} />
+                <label class="sectionHeader" {...item.additionalProps || {}} text={item.title} />
             </Template>
             <Template key="switch" let:item>
-                <ListItemAutoSize enabled={item.enabled} subtitle={getDescription(item)} title={getTitle(item)} on:tap={(event) => onTap(item, event)}>
-                    <switch
-                        id="checkbox"
-                        checked={item.value}
-                        col={1}
-                        isEnabled={item.enabled !== false}
-                        marginLeft={10}
-                        marginTop={16}
-                        verticalAlignment="center"
-                        on:checkedChange={(e) => onCheckBox(item, e)} />
+                <ListItemAutoSize item={{ ...item, title: getTitle(item), subtitle: getDescription(item) }} on:tap={(event) => onTap(item, event)}>
+                    <switch id="checkbox" checked={item.value} col={1} marginLeft={10} verticalAlignment="center" on:checkedChange={(e) => onCheckBox(item, e)} />
                 </ListItemAutoSize>
             </Template>
             <Template key="checkbox" let:item>
-                <ListItemAutoSize enabled={item.enabled} subtitle={getDescription(item)} title={getTitle(item)} on:tap={(event) => onTap(item, event)}>
-                    <checkbox id="checkbox" checked={item.value} col={1} isEnabled={item.enabled !== false} marginLeft={10} on:checkedChange={(e) => onCheckBox(item, e)} />
+                <ListItemAutoSize item={{ ...item, title: getTitle(item), subtitle: getDescription(item) }} on:tap={(event) => onTap(item, event)}>
+                    <checkbox id="checkbox" checked={item.value} col={1} on:checkedChange={(e) => onCheckBox(item, e)} />
                 </ListItemAutoSize>
             </Template>
             <Template key="rightIcon" let:item>
-                <ListItemAutoSize enabled={item.enabled} rightValue={item.rightValue} subtitle={getDescription(item)} title={getTitle(item)} on:tap={(event) => onTap(item, event)}>
+                <ListItemAutoSize item={{ ...item, title: getTitle(item), subtitle: getDescription(item) }} showBottomLine={false} on:tap={(event) => onTap(item, event)}>
                     <IconButton col={1} text={item.rightBtnIcon} on:tap={(event) => onRightIconTap(item, event)} />
                 </ListItemAutoSize>
             </Template>
             <Template key="leftIcon" let:item>
                 <ListItemAutoSize
                     columns="auto,*,auto"
-                    enabled={item.enabled}
+                    item={{ ...item, title: getTitle(item), subtitle: getDescription(item) }}
                     mainCol={1}
-                    rightValue={item.rightValue}
-                    subtitle={getDescription(item)}
-                    title={getTitle(item)}
+                    showBottomLine={false}
                     on:tap={(event) => onTap(item, event)}>
                     <label col={0} color={colorOnBackground} fontFamily={$fonts.mdi} fontSize={24} padding="0 10 0 0" text={item.icon} verticalAlignment="center" />
                 </ListItemAutoSize>
             </Template>
             <Template let:item>
-                <ListItemAutoSize enabled={item.enabled} rightValue={item.rightValue} subtitle={getDescription(item)} title={getTitle(item)} on:tap={(event) => onTap(item, event)}></ListItemAutoSize>
+                <ListItemAutoSize item={{ ...item, title: getTitle(item), subtitle: getDescription(item) }} showBottomLine={false} on:tap={(event) => onTap(item, event)}></ListItemAutoSize>
             </Template>
 
             <Template key="ocr_settings" let:item>

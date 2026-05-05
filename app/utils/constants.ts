@@ -44,6 +44,8 @@ export const SETTINGS_FOLDER_VIEW_STYLE = 'documents_list_folder_view_style';
 export const SETTINGS_ROOT_DATA_FOLDER = 'root_data_folder';
 export const SETTINGS_QUICK_TOGGLE_ENABLED = 'quick_toggle_enabled';
 export const SETTINGS_OCR_COPY_USE_SPACE = 'ocr_copy_use_space';
+export const SETTINGS_CARD_ALWAYS_SHOW_NAME = 'card_always_show_name';
+export const SETTINGS_ENABLE_CRASH_REPORT = 'enable_crash_report';
 
 export const TRANSFORMS_SPLIT = '|';
 
@@ -53,6 +55,7 @@ export const SEPARATOR = '/';
 export const IMG_FORMAT = 'jpg';
 export const PDF_EXT = '.pdf';
 export const PKPASS_EXT = '.pkpass';
+export const ESPASS_EXT = '.espass';
 export const CARD_RATIO = 0.629;
 export const IMAGE_DECODE_HEIGHT = Math.max(Screen.mainScreen.widthPixels, Screen.mainScreen.heightPixels);
 
@@ -110,6 +113,7 @@ export const DEFAULT_PDF_OPTIONS = {
     imageLoadScale: 2,
     draw_ocr_text: true
 };
+export const DEFAULT_CARD_ALWAYS_SHOW_NAME = true;
 export const IMAGE_CONTEXT_OPTIONS = {
     originalQueryCacheType: 0,
     originalStoreCacheType: 0,
@@ -138,6 +142,7 @@ export const EVENT_DOCUMENT_DELETED = 'documentsDeleted';
 export const EVENT_DOCUMENT_PAGES_ADDED = 'documentPagesAdded';
 export const EVENT_DOCUMENT_PAGE_DELETED = 'documentPageDeleted';
 export const EVENT_DOCUMENT_PAGE_UPDATED = 'documentPageUpdated';
+export const EVENT_DOCUMENT_USE_COUNT = 'documentUseCount';
 export const EVENT_FOLDER_UPDATED = 'folderUpdated';
 export const EVENT_FOLDER_ADDED = 'folderAdded';
 

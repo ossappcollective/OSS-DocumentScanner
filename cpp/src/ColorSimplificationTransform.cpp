@@ -13,32 +13,37 @@ std::vector<std::pair<Vec3b, float>> colorSimplificationTransform(const cv::Mat 
     // Get palette
     std::vector<std::pair<Vec3b, float>> colors = getPalette(img, isRGB, resizeThreshold, colorsFilterDistanceThreshold, paletteNbColors, paletteColorSpace != colorSpace, paletteColorSpace);
 
-
     if (paletteColorSpace != colorSpace) {
               for (auto itr = colors.begin(); itr != colors.end(); ++itr) {
                 itr->first  = BGRToColorSpace(itr->first, colorSpace);
             }
 
     }
-    if (channels == 4)
-    {
-        if (isRGB)
-        {
-            cvtColor(img, res, fromRGBColorSpace(colorSpace));
-        }
-        else if (colorSpace != ColorSpace::BGR)
-        {
-            cvtColor(img, res, fromBGRColorSpace(colorSpace));
-        }
+
+    // OpenCV's BGR2HSV / RGB2HSV converters require exactly 3 input channels.
+    // If the source is 4-channel (e.g. RGBA from an Android bitmap), strip the
+    // alpha channel first so the colorspace conversion does not throw.
+    cv::Mat img3ch;
+    if (channels == 4) {
+        cvtColor(img, img3ch, isRGB ? COLOR_RGBA2RGB : COLOR_BGRA2BGR);
+    } else {
+        img3ch = img;
     }
-    else if (isRGB)
+
+    if (isRGB)
     {
-        cvtColor(img, res, fromRGBColorSpace(colorSpace));
+        cvtColor(img3ch, res, fromRGBColorSpace(colorSpace));
     }
     else if (colorSpace != ColorSpace::BGR)
     {
-        cv::cvtColor(img, res, fromBGRColorSpace(colorSpace));
+        cv::cvtColor(img3ch, res, fromBGRColorSpace(colorSpace));
     }
+    else
+    {
+        // colorSpace is BGR and input is already BGR/BGRA — use the 3-ch copy
+        res = img3ch;
+    }
+
     for (int i = 0; i < res.rows; i++)
     {
         for (int j = 0; j < res.cols; j++)
@@ -49,9 +54,6 @@ std::vector<std::pair<Vec3b, float>> colorSimplificationTransform(const cv::Mat 
                 Vec3b color = colors.at(k).first;
                 if (colorDistance(pixel, color, colorSpace) < distanceThreshold)
                 {
-                    // pixel[0] = color[0];
-                    // pixel[1] = color[1];
-                    // pixel[2] = color[2];
                     res.at<Vec3b>(i, j) = color;
                     break;
                 }

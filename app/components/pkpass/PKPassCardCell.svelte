@@ -1,9 +1,10 @@
 <script lang="ts">
     import { lang } from '~/helpers/locale';
-    import { PKPass, PKPassData, PKPassField, PKPassStructure, PKPassTransitType } from '~/models/PKPass';
+    import { PKPass, PKPassData, PKPassField, PKPassStructure, PKPassStyle, PKPassTransitType, PKPassType } from '~/models/PKPass';
     import { getFieldTextAlignment, getTransitIcon } from '~/utils/pkpass';
     import { colors } from '~/variables';
     import { Item } from '~/components/list/MainList.svelte';
+    import { Color } from '@nativescript/core';
 
     const FIELD_LINE_HEIGHT = 15;
 
@@ -43,9 +44,9 @@
 
     function updatePkPass(pkpass: PKPass) {
         passData = pkpass?.passData;
-        foregroundColor = passData?.foregroundColor || colorOnBackground;
-        labelColor = passData.labelColor || colorOnBackground;
         backgroundColor = passData?.backgroundColor || colorSurface;
+        foregroundColor = passData?.foregroundColor || (new Color(backgroundColor).getBrightness() < 145 ? 'white' : 'black');
+        labelColor = passData.labelColor || (new Color(backgroundColor).getBrightness() < 145 ? 'white' : 'black');
         // Apple PKPass image specifications - prefer @2x for quality
         logoImage = pkpass?.images?.logo2x || pkpass?.images?.logo; // Max 160x50 points
         iconImage = pkpass?.images?.icon2x || pkpass?.images?.icon; // 29x29 points
@@ -79,8 +80,7 @@
     // Get formatted field label
     function getFieldLabel(field: any): string {
         if (!field) return null;
-        const label = field.label || field.key;
-        return pkpass.getLocalizedValue(label, lang).toUpperCase() + '\n';
+        return pkpass.getLocalizedFieldLabel(field, lang).toUpperCase() + '\n';
     }
 
     function getLocalizedText(text: string): string {
@@ -90,11 +90,16 @@
 
 <!-- Credit card sized layout with scalable content -->
 <gridlayout {backgroundColor} borderRadius={12 * scaleFactor} {...$$restProps}>
+    {#if stripImage && pkpass?.passType === PKPassType.ESpass}
+        <image noRatioEnforce={true} opacity={0.3} rowSpan={4} src={stripImage} stretch="aspectFill" width="100%" />
+    {/if}
     <!-- Strip or thumbnail banner at top if available -->
-    <image colSpan={3} height={60 * scaleFactor} row={0} src={stripImage || thumbnailImage} stretch="aspectFill" visibility={stripImage || thumbnailImage ? 'visible' : 'collapse'} />
+    {#if pkpass?.passType === PKPassType.PKPass}
+        <image colSpan={3} height={60 * scaleFactor} row={0} src={stripImage || thumbnailImage} stretch="aspectFill" visibility={stripImage || thumbnailImage ? 'visible' : 'collapse'} />
+    {/if}
 
     <!-- Content container with proper padding -->
-    <gridlayout padding={12 * scaleFactor} rows="auto,*,auto,auto">
+    <gridlayout padding={12 * scaleFactor} rows={`auto,${pkpass?.getPassStyle() === PKPassStyle.BoardingPass ? '*' : 'auto'},auto,auto`}>
         <!-- Top row: Logo/Icon + Name (limited width) + Important right-side data -->
         <gridlayout columns="auto,*,auto" marginBottom={5 * scaleFactor} row={0}>
             <!-- Left: Logo (max 80px scaled) or Icon (20px scaled) + Name -->

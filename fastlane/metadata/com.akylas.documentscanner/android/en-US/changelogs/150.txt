@@ -1,0 +1,2 @@
+Bug fixes:
+- error on first app opening related to favorite

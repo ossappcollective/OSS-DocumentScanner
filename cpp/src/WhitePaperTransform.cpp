@@ -267,13 +267,16 @@ void colorBalance(const cv::Mat &img, const cv::Mat &res, double lowPer, double 
     {
         cv::Mat ch;
         cv::extractChannel(img, ch, i);
-        cv::Mat cumHistSum;
+        // calcHist produces a 256×1 column vector — pass it directly to the
+        // find helpers.  The previous code called cv::reduce() here which
+        // collapsed the 256-row histogram to a single 1×1 scalar, making
+        // findLowerBound/findUpperBound always return 0 and rendering the
+        // entire colorBalance operation a no-op.
         cv::Mat hist;
         cv::calcHist(std::vector<cv::Mat>{ch}, {0}, cv::Mat(), hist, {256}, {0, 256});
-        cv::reduce(hist, cumHistSum, 0, cv::REDUCE_SUM);
 
-        int li = findLowerBound(cumHistSum, lowCount);
-        int hi = findUpperBound(cumHistSum, highCount);
+        int li = findLowerBound(hist, lowCount);
+        int hi = findUpperBound(hist, highCount);
 
         if (li == hi)
         {

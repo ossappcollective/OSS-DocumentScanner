@@ -16,7 +16,7 @@
     import { onDestroy, onMount } from 'svelte';
     import { writable } from 'svelte/store';
     import CActionBar from '~/components/common/CActionBar.svelte';
-    import IconButton from '~/components/common/IconButton.svelte';
+    import IconButton from '@shared/components/IconButton.svelte';
     import { lc } from '~/helpers/locale';
     import { DocFolder, OCRDocument, PageData } from '~/models/OCRDocument';
     import { documentsService } from '~/services/documents';
@@ -493,9 +493,12 @@
 
     function updateFloatZoom(value) {
         floatZoom = value;
-        const zoomPercent = (floatZoom - minZoom) / (maxZoom - minZoom);
-        const parentWidth = Utils.layout.toDeviceIndependentPixels(zoomSlider.nativeView.getMeasuredWidth()) - 40;
-        zoomPercentDelta = parentWidth * zoomPercent;
+        const view = zoomSlider?.nativeView;
+        if (view) {
+            const zoomPercent = (floatZoom - minZoom) / (maxZoom - minZoom);
+            const parentWidth = Utils.layout.toDeviceIndependentPixels(view.getMeasuredWidth()) - 40;
+            zoomPercentDelta = parentWidth * zoomPercent;
+        }
     }
     function onZoomValue(e) {
         updateFloatZoom(e.value);
@@ -775,6 +778,7 @@
                     isSelected={batchMode}
                     marginLeft={16}
                     marginTop={20}
+                    rounded={false}
                     selectedColor={colorPrimary}
                     subtitle={lc('batch_mode')}
                     text={batchMode ? 'mdi-image-multiple' : 'mdi-image'}

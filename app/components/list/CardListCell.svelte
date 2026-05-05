@@ -17,8 +17,10 @@
 </script>
 
 <script lang="ts">
-    let { colorOnPrimary, colorSurface } = $colors;
-    $: ({ colorOnPrimary, colorSurface } = $colors);
+    import FavoriteIndicator from '~/components/common/FavoriteIndicator.svelte';
+
+    let { colorOnPrimary } = $colors;
+    $: ({ colorOnPrimary } = $colors);
 
     export let collectionView: NativeViewElementNode<CollectionViewWithSwipeMenu>;
     export let itemWidth: number;
@@ -27,78 +29,75 @@
     export let nbColumns: Writable<number>;
     export let item: Item;
     export let pkPassCell: boolean = false;
+    export let alwaysShowNames: boolean = true;
     export let syncEnabled: boolean;
-    export let onFullCardItemTouch;
     export let layout: string;
     export let syncColors: string[];
 
-    function animateCards(animOptions, startIndex, endIndex = -1) {
-        let index = startIndex;
-        const startView = collectionView?.nativeElement.getViewForItemAtIndex(startIndex);
+    // function animateCards(animOptions, startIndex, endIndex = -1) {
+    //     let index = startIndex;
+    //     const startView = collectionView?.nativeElement.getViewForItemAtIndex(startIndex);
 
-        let foundFirst = false;
-        collectionView?.nativeElement.eachChild((child: View) => {
-            if (foundFirst) {
-                if (endIndex === -1 || index <= endIndex) {
-                    child.animate(animOptions);
-                    index++;
-                }
-            } else {
-                if (child === startView) {
-                    foundFirst = true;
-                }
-            }
-            return true;
-        });
-    }
-    function translateCards(startIndex, endIndex = -1) {
-        animateCards(
-            {
-                duration: 100,
-                translate: {
-                    x: 0,
-                    y: 160
-                }
-            },
-            startIndex,
-            endIndex
-        );
-    }
-    function hideCards(startIndex, endIndex = -1) {
-        animateCards(
-            {
-                duration: 100,
-                translate: {
-                    x: 0,
-                    y: 0
-                }
-            },
-            startIndex,
-            endIndex
-        );
-    }
-    function fullCardDrawerTranslationFunction(side, width, value, delta, progress) {
-        const result = {
-            mainContent: {
-                translateX: side === 'right' ? -delta : delta
-            },
-            rightDrawer: {
-                // translateX: width + (side === 'right' ? -delta : delta)
-            },
-            leftDrawer: {
-                // translateX: (side === 'right' ? -delta : delta) - width
-            },
-            backDrop: {
-                translateX: side === 'right' ? -delta : delta.dev,
-                opacity: progress * 0.01
-            }
-        };
+    //     let foundFirst = false;
+    //     collectionView?.nativeElement.eachChild((child: View) => {
+    //         if (foundFirst) {
+    //             if (endIndex === -1 || index <= endIndex) {
+    //                 child.animate(animOptions);
+    //                 index++;
+    //             }
+    //         } else {
+    //             if (child === startView) {
+    //                 foundFirst = true;
+    //             }
+    //         }
+    //         return true;
+    //     });
+    // }
+    // function translateCards(startIndex, endIndex = -1) {
+    //     animateCards(
+    //         {
+    //             duration: 100,
+    //             translate: {
+    //                 x: 0,
+    //                 y: 160
+    //             }
+    //         },
+    //         startIndex,
+    //         endIndex
+    //     );
+    // }
+    // function hideCards(startIndex, endIndex = -1) {
+    //     animateCards(
+    //         {
+    //             duration: 100,
+    //             translate: {
+    //                 x: 0,
+    //                 y: 0
+    //             }
+    //         },
+    //         startIndex,
+    //         endIndex
+    //     );
+    // }
+    // function fullCardDrawerTranslationFunction(side, width, value, delta, progress) {
+    //     const result = {
+    //         mainContent: {
+    //             translateX: side === 'right' ? -delta : delta
+    //         },
+    //         rightDrawer: {
+    //             // translateX: width + (side === 'right' ? -delta : delta)
+    //         },
+    //         leftDrawer: {
+    //             // translateX: (side === 'right' ? -delta : delta) - width
+    //         },
+    //         backDrop: {
+    //             translateX: side === 'right' ? -delta : delta.dev,
+    //             opacity: progress * 0.01
+    //         }
+    //     };
 
-        return result;
-    }
-    function getItemBackgroundColor(item) {
-        return item.doc.pages[0].colors?.[0] || item.doc.extra?.color;
-    }
+    //     return result;
+    // }
     function getItemRotableImageParams(item: Item) {
         return {
             id: 'imageView',
@@ -196,61 +195,57 @@
         return result;
     }
 
-    async function showImages(item: Item) {
-        const component = (await import('~/components/FullScreenImageViewer.svelte')).default;
-        const doc = item.doc;
-        navigate({
-            page: component,
-            // transition: __ANDROID__ ? SharedTransition.custom(new PageTransition(300, undefined, 10), {}) : undefined,
-            props: {
-                images: doc.pages.map((page, index) => ({
-                    sharedTransitionTag: `document_${doc.id}_${page.id}`,
-                    name: doc.name,
-                    image: page.imagePath,
-                    ...page
-                })),
-                startPageIndex: 0
-            }
-        });
-        collectionView?.nativeElement.closeCurrentMenu();
-    }
+    // async function showImages(item: Item) {
+    //     const component = (await import('~/components/FullScreenImageViewer.svelte')).default;
+    //     const doc = item.doc;
+    //     navigate({
+    //         page: component,
+    //         // transition: __ANDROID__ ? SharedTransition.custom(new PageTransition(300, undefined, 10), {}) : undefined,
+    //         props: {
+    //             images: doc.pages.map((page, index) => ({
+    //                 sharedTransitionTag: `document_${doc.id}_${page.id}`,
+    //                 name: doc.name,
+    //                 image: page.imagePath,
+    //                 ...page
+    //             })),
+    //             startPageIndex: 0
+    //         }
+    //     });
+    //     collectionView?.nativeElement.closeCurrentMenu();
+    // }
 
-    function onItemTouch(item: Item, event) {
-        if (layout !== 'cardholder') {
-            return;
-        }
-        if (__ANDROID__) {
-            // const index = documents.findIndex((d) => d.doc.id === item.doc.id);
-            switch (event.action) {
-                case 'down':
-                    (event.object as View).animate({
-                        duration: 100,
-                        translate: {
-                            x: 0,
-                            y: -40
-                        }
-                    });
-                    break;
+    // function onItemTouch(item: Item, event) {
+    //     if (layout !== 'cardholder') {
+    //         return;
+    //     }
+    //     if (__ANDROID__) {
+    //         // const index = documents.findIndex((d) => d.doc.id === item.doc.id);
+    //         switch (event.action) {
+    //             case 'down':
+    //                 (event.object as View).animate({
+    //                     duration: 100,
+    //                     translate: {
+    //                         x: 0,
+    //                         y: -40
+    //                     }
+    //                 });
+    //                 break;
 
-                case 'up':
-                case 'cancel':
-                    (event.object as View).animate({
-                        duration: 100,
-                        translate: {
-                            x: 0,
-                            y: 0
-                        }
-                    });
-                    break;
-            }
-        }
-    }
-
-    function itemHasImage(item: Item) {
-        return !!item.doc.pages[0].imagePath;
-    }
+    //             case 'up':
+    //             case 'cancel':
+    //                 (event.object as View).animate({
+    //                     duration: 100,
+    //                     translate: {
+    //                         x: 0,
+    //                         y: 0
+    //                     }
+    //                 });
+    //                 break;
+    //         }
+    //     }
+    // }
     function itemHasDefaultName(item: Item) {
-        return !item.doc.name || item.doc.name.match(/\d+:\d+:\d+/);
+        return !alwaysShowNames && (!item.doc.name || item.doc.name.match(/\d+:\d+:\d+/));
     }
 </script>
 
@@ -287,6 +282,7 @@
         <!-- <gridlayout borderRadius={12}> -->
         <SelectedIndicator selected={item.selected} />
         <SyncIndicator {syncColors} verticalAlignment="top" visible={syncEnabled} />
+        <FavoriteIndicator favorite={item.doc.favorite === 1} />
         <!-- </gridlayout> -->
     </gridlayout>
     <!-- <mdbutton prop:rightDrawer class="mdi" fontSize={40} height={60} text="mdi-fullscreen" variant="text" verticalAlignment="center" width={60} on:tap={() => showImages(item)} />

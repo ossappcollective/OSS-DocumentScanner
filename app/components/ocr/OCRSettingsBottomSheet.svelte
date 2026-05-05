@@ -9,7 +9,7 @@
     import { lc } from '~/helpers/locale';
     import { OCRLanguages, ocrService } from '~/services/ocr';
     import { colors, fonts } from '~/variables';
-    import ListItemAutoSize from '../common/ListItemAutoSize.svelte';
+    import ListItemAutoSize from '@shared/components/ListItemAutoSize.svelte';
     import Chip from '../widgets/Chip.svelte';
     import { checkOrDownloadOCRLanguages, localizedLanguage } from '~/utils/ui';
 
@@ -86,7 +86,7 @@
 <gesturerootview id="ocrSettingsBottomSheet" rows="auto">
     <stacklayout padding={onlySettings ? 0 : 16}>
         {#if onlySettings}
-            <ListItemAutoSize title={lc('quality')} titleProps={{ verticalAlignment: 'top' }}>
+            <ListItemAutoSize item={{ title: lc('quality'), titleProps: { verticalAlignment: 'top' } }}>
                 <stacklayout marginTop={50} orientation="horizontal" verticalAlignment="bottom">
                     {#each qualities as quality (quality)}
                         <gridlayout
@@ -156,7 +156,7 @@
             </stacklayout>
         {/if}
         {#if onlySettings}
-            <ListItemAutoSize paddingRight={0} title={lc('languages')} titleProps={{ verticalAlignment: 'top' }}>
+            <ListItemAutoSize item={{ title: lc('languages'), titleProps: { verticalAlignment: 'top' } }} paddingRight={0}>
                 <mdbutton class="icon-btn" col={1} marginTop={6} text="mdi-plus" variant="text" verticalAlignment="top" on:tap={addLanguages} />
                 <wraplayout marginTop={50} verticalAlignment="bottom">
                     {#each languages as language (language)}
@@ -180,7 +180,7 @@
             <textfield hint={lc('languages')} placeholder={lc('languages')} returnKeyType="search" variant="none" verticalTextAlignment="center" />
         </gridlayout> -->
         {#if !onlySettings}
-        <mdbutton horizontalAlignment="right" padding="10 16 10 16" row={1} text={lc('start')} on:tap={startOrCloseOCR} />
+            <mdbutton horizontalAlignment="right" padding="10 16 10 16" row={1} text={lc('start')} on:tap={startOrCloseOCR} />
         {/if}
 
         {#if showDownloadButton}

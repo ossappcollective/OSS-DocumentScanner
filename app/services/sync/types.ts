@@ -30,6 +30,13 @@ export const SERVICES_SYNC_MASK: { [key in SYNC_TYPES]: number } = {
     onedrive_pdf: 1 << 12,
     paperless_pdf: 1 << 13
 };
+
+export const SERVICES_SYNC_ICONS_COLORS: { [key: string]: { icon: string; color?: string; fontFamily?: string } } = {
+    webdav: { icon: 'app-webdav', color: '#347df0', fontFamily: 'app' },
+    gdrive: { icon: 'app-gdrive', color: '#f7b403', fontFamily: 'app' },
+    onedrive: { icon: 'app-onedrive', color: '#28a3e4', fontFamily: 'app' },
+    folder: { icon: 'mdi-folder' }
+};
 export const SERVICES_SYNC_COLOR: { [key in SYNC_TYPES]: string } = {
     webdav_pdf: '#8293CE',
     webdav_image: '#C2EF1F',

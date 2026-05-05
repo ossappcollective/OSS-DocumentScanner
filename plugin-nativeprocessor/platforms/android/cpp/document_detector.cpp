@@ -75,7 +75,9 @@ static jobject createBitmap(JNIEnv *env, jint width, jint height)
     jstring configName = env->NewStringUTF("ARGB_8888");
     jmethodID valueOfBitmapConfigFunction = env->GetStaticMethodID(gJNIInfo.jClassBitmapConfig, "valueOf", "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;");
     jobject jbitmapConfig = env->CallStaticObjectMethod(gJNIInfo.jClassBitmapConfig, valueOfBitmapConfigFunction, configName);
+    env->DeleteLocalRef(configName);
     jobject bitmap = env->CallStaticObjectMethod(gJNIInfo.jClassBitmap, gJNIInfo.jMethodCreateBitmap, width, height, jbitmapConfig);
+    env->DeleteLocalRef(jbitmapConfig);
     if (!bitmap) {
         return nullptr; // Return null if Bitmap creation failed
     }
@@ -86,7 +88,6 @@ static jstring native_ocr(JNIEnv *env, jobject type, jobject srcBitmap, jstring 
 {
     Mat srcBitmapMat;
     bitmap_to_mat(env, srcBitmap, srcBitmapMat);
-    Mat bgrData(srcBitmapMat.rows, srcBitmapMat.cols, CV_8UC3);
     std::string options{jstringToString(env, options_)};
     std::optional<std::function<void(int)>> progressLambda;
     jmethodID method = nullptr;
@@ -122,13 +123,15 @@ jobject pointsToJava(JNIEnv *env, std::vector<std::vector<cv::Point>> scanPoints
             {
                 for (int j = 0; j < 4; ++j)
                 {
-                    env->CallBooleanMethod(innerVector, addMethodID, createJavaPoint(env, scanPoints[j]));
+                    jobject point = createJavaPoint(env, scanPoints[j]);
+                    env->CallBooleanMethod(innerVector, addMethodID, point);
+                    env->DeleteLocalRef(point);
                 }
             }
             env->CallBooleanMethod(outerVector, addMethodID, innerVector);
+            env->DeleteLocalRef(innerVector);
         }
     }
-     auto t_end = std::chrono::high_resolution_clock::now();
 
 //     auto elapsed_time_ms = duration_cast<std::chrono::milliseconds>(t_end - t_start);
 //    __android_log_print(ANDROID_LOG_INFO,     TAG, "pointsToJava %d ms\n", elapsed_time_ms.count());
@@ -285,7 +288,11 @@ static void native_crop(JNIEnv *env, jobject type, jobject srcBitmap, jstring po
     bitmap_to_mat(env, srcBitmap, srcBitmapMat);
 
     AndroidBitmapInfo outBitmapInfo;
-    AndroidBitmap_getInfo(env, outBitmap, &outBitmapInfo);
+    if (AndroidBitmap_getInfo(env, outBitmap, &outBitmapInfo) < 0) {
+        jclass je = env->FindClass("java/lang/Exception");
+        env->ThrowNew(je, "AndroidBitmap_getInfo failed for output bitmap");
+        return;
+    }
     Mat dstBitmapMat;
     int newHeight = (int)outBitmapInfo.height;
     int newWidth = (int)outBitmapInfo.width;

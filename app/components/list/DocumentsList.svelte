@@ -20,6 +20,7 @@
     import SyncIndicator from '../common/SyncIndicator.svelte';
     import MainList, { Item } from './MainList.svelte';
     import { ellipsize } from '~/utils/utils.common';
+    import FavoriteIndicator from '~/components/common/FavoriteIndicator.svelte';
 
     const textPaint = new Paint();
     const IMAGE_DECODE_WIDTH = Utils.layout.toDevicePixels(200);
@@ -152,6 +153,7 @@
             <SelectedIndicator horizontalAlignment="left" margin={10} selected={item.selected} />
             <SyncIndicator syncColors={getSyncColors(item)} visible={syncEnabled} />
             <PageIndicator horizontalAlignment="right" margin={10} scale={$fontScale} text={item.doc.pages.length} />
+            <FavoriteIndicator favorite={item.doc.favorite === 1} />
         </canvasview>
     </Template>
 

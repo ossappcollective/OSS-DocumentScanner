@@ -42,7 +42,7 @@
     } from '~/utils/ui';
     import { colors, fontScale, screenWidthDips, windowInset } from '~/variables';
     import EditNameActionBar from '../common/EditNameActionBar.svelte';
-    import IconButton from '../common/IconButton.svelte';
+    import IconButton from '@shared/components/IconButton.svelte';
     import PageIndicator from '../common/PageIndicator.svelte';
 
     // technique for only specific properties to get updated on store change
@@ -319,6 +319,8 @@
                 page: OCRDataBottomSheet,
                 fullscreen: true,
                 props: {
+                    pageIndex: currentIndex,
+                    document,
                     ocrData: items.getItem(currentIndex).ocrData,
                     imagePath: item.imagePath,
                     imageWidth: item.width,
@@ -481,7 +483,7 @@
                         title: lc('brightness'),
                         icon: 'mdi-brightness-5',
                         min: -100,
-                        max: 500,
+                        max: 100,
                         resetValue: 0,
                         step: __IOS__ ? 1 : undefined,
                         // value: 0,
@@ -495,7 +497,7 @@
                         title: lc('contrast'),
                         icon: 'mdi-contrast-box',
                         min: 0,
-                        max: 400,
+                        max: 200,
                         resetValue: 100,
                         formatter: (v) => (v / 100).toFixed(2),
                         step: __IOS__ ? 1 : undefined,

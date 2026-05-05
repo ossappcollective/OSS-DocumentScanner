@@ -1,5 +1,7 @@
+import { IgnoreError, PermissionError, SilentError } from '@akylas/nativescript-app-utils/error';
 import { share } from '@akylas/nativescript-app-utils/share';
 import { MultiResult, Permissions, Status, isPermResultAuthorized, openSettings, request } from '@nativescript-community/perms';
+import { ComponentInstanceInfo, resolveComponentElement } from '@nativescript-community/svelte-native/dom';
 import { openFilePicker, pickFolder } from '@nativescript-community/ui-document-picker';
 import { Label } from '@nativescript-community/ui-label';
 import { showBottomSheet } from '@nativescript-community/ui-material-bottomsheet/svelte';
@@ -7,7 +9,6 @@ import { MDCAlertControlerOptions, alert, confirm, prompt } from '@nativescript-
 import { HorizontalPosition, PopoverOptions, VerticalPosition } from '@nativescript-community/ui-popover';
 import { closePopover, showPopover } from '@nativescript-community/ui-popover/svelte';
 import {
-    AlertOptions,
     Animation,
     AnimationDefinition,
     Application,
@@ -29,7 +30,6 @@ import { ConfirmOptions } from '@nativescript/core/ui/dialogs/dialogs-common';
 import { SDK_VERSION, copyToClipboard, debounce, openFile } from '@nativescript/core/utils';
 import { create as createImagePicker } from '@nativescript/imagepicker';
 import { doInBatch } from '@shared/utils/batch';
-import { IgnoreError, PermissionError, SilentError } from '@akylas/nativescript-app-utils/error';
 import { showError } from '@shared/utils/showError';
 import { goBack, navigate, showModal } from '@shared/utils/svelte/ui';
 import { hideLoading, showLoading, showSnack, updateLoadingProgress } from '@shared/utils/ui';
@@ -46,15 +46,16 @@ import {
     printPDF,
     processFromFile
 } from 'plugin-nativeprocessor';
+import { zip } from 'plugin-zip';
 import type { ComponentProps } from 'svelte';
-import { ComponentInstanceInfo, resolveComponentElement } from '@nativescript-community/svelte-native/dom';
 import { get } from 'svelte/store';
 import type ExportPDFAlertOptions__SvelteComponent_ from '~/components/common/ExportPDFAlertOptions.svelte';
-import type OptionSelect__SvelteComponent_ from '~/components/common/OptionSelect.svelte';
+import type OptionSelect__SvelteComponent_ from '@shared/components/OptionSelect.svelte';
 import type BottomSnack__SvelteComponent_ from '~/components/widgets/BottomSnack.svelte';
 import BottomSnack from '~/components/widgets/BottomSnack.svelte';
-import { getFileNameForDocument, getFormatedDateForFilename, getLocaleDisplayName, l, lc } from '~/helpers/locale';
+import { getFileNameForDocument, getFormatedDateForFilename, getLocaleDisplayName, l, lang, lc } from '~/helpers/locale';
 import { DocFolder, ImportImageData, OCRDocument, OCRPage, PageData } from '~/models/OCRDocument';
+import { PKPassType } from '~/models/PKPass';
 import { OCRLanguages, ocrService } from '~/services/ocr';
 import { getPDFDefaultExportOptions } from '~/services/pdf/PDFCanvas';
 import { getTransformedImage } from '~/services/pdf/PDFExportCanvas.common';
@@ -74,8 +75,7 @@ import {
     DEFAULT_OCR_COPY_USE_SPACE,
     DEFAULT_TRANSFORM,
     DOCUMENT_NOT_DETECTED_MARGIN,
-    IMG_COMPRESS,
-    IMG_FORMAT,
+    ESPASS_EXT,
     PDFImportImages,
     PDF_EXT,
     PDF_IMPORT_IMAGES,
@@ -90,8 +90,6 @@ import {
     SETTINGS_DEFAULT_COLORTYPE,
     SETTINGS_DEFAULT_CONTRAST,
     SETTINGS_DEFAULT_TRANSFORM,
-    SETTINGS_IMAGE_EXPORT_FORMAT,
-    SETTINGS_IMAGE_EXPORT_QUALITY,
     SETTINGS_IMPORT_PDF_IMAGES,
     SETTINGS_OCR_COPY_USE_SPACE,
     SETTINGS_TRANSFORM_BATCH_SIZE,
@@ -101,12 +99,12 @@ import {
     getImageExportSettings
 } from '~/utils/constants';
 import { recycleImages } from '~/utils/images';
-import { showToast, timeout } from '~/utils/ui';
+import { buildPassArchive, getStoredPassFormat } from '~/utils/pkpass';
+import { importPKPassFiles } from '~/utils/pkpass-import';
+import { showToast } from '~/utils/ui';
 import { colors, fontScale, screenWidthDips } from '~/variables';
 import { MatricesTypes, Matrix } from '../color_matrix';
 import { cleanFilename, saveImage } from '../utils';
-import { importPKPassFiles } from '~/utils/pkpass-import';
-import { zip } from 'plugin-zip';
 
 export { ColorMatricesType, ColorMatricesTypes, getColorMatrix } from '~/utils/matrix';
 
@@ -130,7 +128,7 @@ export async function importAndScanImageOrPdfFromUris({ canGoToView = true, docu
                     testStr = await getFileName(e);
                 }
                 acc.then((obj) => {
-                    if (CARD_APP && testStr.endsWith(PKPASS_EXT)) {
+                    if (CARD_APP && (testStr.endsWith(PKPASS_EXT) || testStr.endsWith(ESPASS_EXT))) {
                         obj[2].push(e);
                     } else if (testStr.endsWith(PDF_EXT)) {
                         obj[0].push(e);
@@ -155,7 +153,7 @@ export async function importAndScanImageOrPdfFromUris({ canGoToView = true, docu
                 { group: 'pdf', name: lc('pdf_one_image_per_page'), data: PDFImportImages.never, type: 'checkbox', boxType: 'circle', value: true },
                 { group: 'pdf', name: lc('pdf_one_image_per_pdf_image'), data: PDFImportImages.always, type: 'checkbox', boxType: 'circle', value: false }
             ]);
-            // const component = (await import('~/components/common/OptionSelect.svelte')).default;
+            // const component = (await import('@shared/components/OptionSelect.svelte')).default;
             const result = await showConfirmOptionSelect<PDFImportImages>(
                 {
                     height: Math.min(options.length * 100, 400),
@@ -441,8 +439,13 @@ export async function importAndScanImage({
         } else {
             selection = (
                 await openFilePicker({
-                    mimeTypes: ['image/*', 'application/pdf'].concat(CARD_APP ? ['application/vnd.apple.pkpass'] : []),
-                    documentTypes: __IOS__ ? [UTTypeImage.identifier, UTTypePDF.identifier, UTType.typeWithFilenameExtension('pkpass').identifier] : undefined,
+                    // we need */* or we cant pick up .espass as it is not a known andorid mimetype
+                    mimeTypes: ['image/*', 'application/pdf'].concat(CARD_APP ? ['application/vnd.apple.pkpass', 'application/vnd.espass-espass', '*/*'] : []),
+                    documentTypes: __IOS__
+                        ? [UTTypeImage.identifier, UTTypePDF.identifier].concat(
+                              CARD_APP ? [UTType.typeWithFilenameExtension('pkpass').identifier, UTType.typeWithFilenameExtension('espass').identifier] : []
+                          )
+                        : undefined,
                     multipleSelection: true,
                     pickerMode: 0,
                     forceSAF: true
@@ -462,7 +465,7 @@ export async function importAndScanImage({
 }
 
 export async function showConfirmOptionSelect<T>(props?: ComponentProps<OptionSelect__SvelteComponent_>, options?: Partial<ConfirmOptions & MDCAlertControlerOptions>) {
-    const component = (await import('~/components/common/OptionSelect.svelte')).default;
+    const component = (await import('@shared/components/OptionSelect.svelte')).default;
     let componentInstanceInfo: ComponentInstanceInfo<GridLayout, OptionSelect__SvelteComponent_>;
     try {
         componentInstanceInfo = resolveComponentElement(component, {
@@ -503,7 +506,7 @@ export async function showPopoverMenu<T = any>({
     vertPos
 }: { options; anchor; onClose?; props?; title?: string; closeOnClose? } & Partial<PopoverOptions>) {
     const { colorSurfaceContainer } = get(colors);
-    const OptionSelect = (await import('~/components/common/OptionSelect.svelte')).default;
+    const OptionSelect = (await import('@shared/components/OptionSelect.svelte')).default;
     const rowHeight = (props?.rowHeight || 58) * get(fontScale);
     const maxHeight = Screen.mainScreen.heightDIPs - 50;
     const result: T = await showPopover({
@@ -745,7 +748,7 @@ export async function showPDFPopoverMenu({
                                     const jpegQuality = componentInstanceInfo.viewInstance.jpegQuality;
                                     const folder = componentInstanceInfo.viewInstance.folder;
                                     showLoading(lc('exporting'));
-                                    DEV_LOG && console.log('exportPDF', folder, filename, jpegQuality, password);
+                                    DEV_LOG && console.log('exportPDF', folder, filename, jpegQuality, !!password);
                                     const filePath = await exportPDFAsync({
                                         pages,
                                         document,
@@ -987,6 +990,40 @@ export function getDirectoryName(folderPath: string) {
         .pop();
 }
 
+async function exportPkPassToTemp(document: OCRDocument, page: OCRPage, targetFormat?: PKPassType) {
+    if (CARD_APP) {
+        const format = targetFormat ?? getStoredPassFormat(page.pkpass);
+        const passExt = format === PKPassType.ESpass ? ESPASS_EXT : PKPASS_EXT;
+        const fileName = page.name ?? document.name ?? `${document.id}_${page.pkpass_id}`;
+        const actualFileName = `${cleanFilename(fileName)}${passExt}`;
+        const outputZipPath = path.join(knownFolders.temp().path, actualFileName);
+
+        const docFolder = document.folderPath;
+        const pageFolder = docFolder.getFolder(page.id);
+        const pkpassFolderPath = pageFolder.getFolder('pkpass').path;
+
+        if (format !== getStoredPassFormat(page.pkpass)) {
+            await buildPassArchive(pkpassFolderPath, page.pkpass, format, outputZipPath, lang);
+        } else {
+            await zip({ directory: pkpassFolderPath, archive: outputZipPath, keepParent: false });
+        }
+        return outputZipPath;
+    }
+}
+
+/**
+ * Determine the pass export format from a menu action id.
+ * Returns null for legacy ids (e.g. 'export_pkpass') so that callers can
+ * fall back to the pass's stored format.
+ */
+function getTargetFormatFromActionId(id: string): PKPassType | null {
+    if (CARD_APP) {
+        if (id === 'export_as_espass' || id === 'share_as_espass') return PKPassType.ESpass;
+        if (id === 'export_as_pkpass' || id === 'share_as_pkpass') return PKPassType.PKPass;
+    }
+    return null; // legacy / native-format action
+}
+
 export async function showImagePopoverMenu(pages: { page: OCRPage; document: OCRDocument }[], anchor, popoverOptions?: Partial<PopoverOptions>) {
     let exportDirectory = ApplicationSettings.getString('image_export_directory', DEFAULT_EXPORT_DIRECTORY);
     let exportDirectoryName = exportDirectory;
@@ -1029,13 +1066,23 @@ export async function showImagePopoverMenu(pages: { page: OCRPage; document: OCR
     );
     if (CARD_APP && pages.some((p) => p.page.pkpass)) {
         options.splice(options.length - 2, 0, {
-            id: 'export_pkpass',
-            name: lc('export_passbooks'),
+            id: 'export_as_pkpass',
+            name: lc('export_as_pkpass'),
+            icon: 'mdi-export'
+        } as any);
+        options.splice(options.length - 2, 0, {
+            id: 'export_as_espass',
+            name: lc('export_as_espass'),
             icon: 'mdi-export'
         } as any);
         options.push({
-            id: 'share_pkpass',
-            name: lc('share_passbooks'),
+            id: 'share_as_pkpass',
+            name: lc('share_as_pkpass'),
+            icon: 'mdi-share-variant'
+        } as any);
+        options.push({
+            id: 'share_as_espass',
+            name: lc('share_as_espass'),
             icon: 'mdi-share-variant'
         } as any);
     }
@@ -1122,9 +1169,12 @@ export async function showImagePopoverMenu(pages: { page: OCRPage; document: OCR
                                 recycleImages(images);
                             }
                             break;
+                        case 'share_as_pkpass':
+                        case 'share_as_espass':
                         case 'share_pkpass': {
                             if (CARD_APP) {
                                 await closePopover();
+                                const targetFormat = getTargetFormatFromActionId(item.id);
                                 const files = [];
                                 await doInBatch(
                                     pages.filter((p) => p.page.pkpass),
@@ -1135,16 +1185,9 @@ export async function showImagePopoverMenu(pages: { page: OCRPage; document: OCR
                                         },
                                         index
                                     ) => {
-                                        const page = p.page;
-                                        const fileName = page.name ?? p.document.name ?? `${p.document.id}_${page.pkpass_id}`;
-                                        const outputZip = knownFolders.temp().getFolder(`${cleanFilename(fileName)}.pkpass`, false);
+                                        const outputZipPath = await exportPkPassToTemp(p.document, p.page, targetFormat);
 
-                                        const docFolder = p.document.folderPath;
-                                        const pageFolder = docFolder.getFolder(page.id);
-                                        const pkpassFolder = pageFolder.getFolder('pkpass');
-                                        await zip({ directory: pkpassFolder.path, archive: outputZip.path, keepParent: false });
-
-                                        files.push(outputZip.path);
+                                        files.push(outputZipPath);
                                     }
                                 );
                                 await share({ files });
@@ -1152,6 +1195,8 @@ export async function showImagePopoverMenu(pages: { page: OCRPage; document: OCR
                             }
                             break;
                         }
+                        case 'export_as_pkpass':
+                        case 'export_as_espass':
                         case 'export_pkpass': {
                             if (CARD_APP) {
                                 DEV_LOG && console.log('export_pkpass', exportDirectory);
@@ -1166,6 +1211,7 @@ export async function showImagePopoverMenu(pages: { page: OCRPage; document: OCR
                                     }
                                 }
                                 await closePopover();
+                                const targetFormat = getTargetFormatFromActionId(item.id);
                                 await doInBatch(
                                     pages.filter((p) => p.page.pkpass),
                                     async (
@@ -1176,19 +1222,14 @@ export async function showImagePopoverMenu(pages: { page: OCRPage; document: OCR
                                         index
                                     ) => {
                                         const needsCopy = __ANDROID__ && exportDirectory.startsWith(ANDROID_CONTENT);
-                                        const page = p.page;
-                                        const fileName = page.name ?? p.document.name ?? `${p.document.id}_${page.pkpass_id}`;
-                                        const actualFileName = `${cleanFilename(fileName)}.pkpass`;
-                                        const outputZip = needsCopy ? path.join(knownFolders.temp().path, actualFileName) : path.join(exportDirectory, actualFileName);
+                                        const format = targetFormat ?? getStoredPassFormat(p.page.pkpass);
 
-                                        const docFolder = p.document.folderPath;
-                                        const pageFolder = docFolder.getFolder(page.id);
-                                        const pkpassFolder = pageFolder.getFolder('pkpass');
-                                        await zip({ directory: pkpassFolder.path, archive: outputZip, keepParent: false });
+                                        const outputZipPath = await exportPkPassToTemp(p.document, p.page, format);
 
                                         if (__ANDROID__ && needsCopy) {
+                                            const mimeType = targetFormat === PKPassType.ESpass ? 'application/vnd.espass-espass' : 'application/vnd.apple.pkpass';
                                             const context = Utils.android.getApplicationContext();
-                                            com.akylas.documentscanner.utils.FileUtils.Companion.copyFileToDocumentFile(context, outputZip, 'application/vnd.apple.pkpass', exportDirectory);
+                                            com.akylas.documentscanner.utils.FileUtils.Companion.copyFileToDocumentFile(context, outputZipPath, mimeType, exportDirectory);
                                         }
                                     }
                                 );

@@ -61,6 +61,8 @@ on:
 
 jobs:
   release-documentscanner-android:
+    permissions:
+      contents: write
     uses: Akylas/app-tools/.github/workflows/release_android.yml@main
     if: github.event.inputs.android == 'true' && github.event.inputs.documentscanner == 'true'
     with:
@@ -75,6 +77,8 @@ jobs:
     secrets: inherit
 
   release-cardwallet-android:
+    permissions:
+      contents: write
     uses: Akylas/app-tools/.github/workflows/release_android.yml@main
     if: github.event.inputs.android == 'true' && github.event.inputs.cardwallet == 'true'
     with:
@@ -89,6 +93,8 @@ jobs:
     secrets: inherit
 
   release-documentscanner-ios:
+    permissions:
+      contents: write
     uses: Akylas/app-tools/.github/workflows/release_ios.yml@main
     if: github.event.inputs.ios == 'true' && github.event.inputs.documentscanner == 'true'
     with:
@@ -100,6 +106,8 @@ jobs:
     secrets: inherit
     
   release-cardwallet-ios:
+    permissions:
+      contents: write
     uses: Akylas/app-tools/.github/workflows/release_ios.yml@main
     if: github.event.inputs.ios == 'true' && github.event.inputs.cardwallet == 'true'
     with:

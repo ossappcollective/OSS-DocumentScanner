@@ -1,0 +1,8 @@
+Features:
+- add favorites and most-used sort order for documents and cards
+
+Bug fixes:
+- webdav sync fix
+- icons to differentiate sync services
+- missing translation
+- Translations update

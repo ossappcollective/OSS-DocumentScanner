@@ -14,7 +14,7 @@ void buffer_to_mat(JNIEnv *env, jint width, jint height, jint chromaPixelStride,
         Mat yMat(cv::Size(width, height), CV_8UC1, yPlane, yPlaneStep);
         Mat uvMat1(cv::Size(width / 2, height / 2), CV_8UC2, uvPlane1, uvPlane1Step);
         Mat uvMat2(cv::Size(width / 2, height / 2), CV_8UC2, uvPlane2, uvPlane2Step);
-        int addrDiff = (long) uvMat2.data - (long) uvMat1.data;
+        ptrdiff_t addrDiff = uvMat2.data - uvMat1.data;
         if (addrDiff > 0) {
             uvMat2.release();
             cv::cvtColorTwoPlane(yMat, uvMat1, srcMat, cv::COLOR_YUV2RGBA_NV12);
@@ -27,8 +27,8 @@ void buffer_to_mat(JNIEnv *env, jint width, jint height, jint chromaPixelStride,
             uvMat2.release();
         }
     } else { // Chroma channels are not interleaved
-        // Allocate memory for the YUV frame
-        char *yuvBytes = new char[width * (height + height / 2)];
+        // Allocate memory for the YUV frame (size_t cast avoids signed-integer overflow)
+        char *yuvBytes = new char[static_cast<size_t>(width) * (height + height / 2)];
         // Get the pointers to the Y, U, and V planes of the YUV frame
         const uint8_t *yPlane = static_cast<uint8_t *>(env->GetDirectBufferAddress(buffer1));
         const uint8_t *uPlane = static_cast<uint8_t *>(env->GetDirectBufferAddress(buffer2));
@@ -40,51 +40,36 @@ void buffer_to_mat(JNIEnv *env, jint width, jint height, jint chromaPixelStride,
         // Number of pixels in the frame
         int pixels = width * height;
         if (yPlaneStep == width) {
-            // Copy the Y plane data to the buffer
-//            std::memcpy(yuvBytes, yPlane, pixels);
+            // No row padding: copy the whole Y plane in one shot
             std::copy(yPlane, yPlane + pixels, yuvBytes);
             yuvBytesOffset += pixels;
         } else {
-            // Padding between rows of the Y plane
-            int padding = yPlaneStep - width;
+            // Row padding present: copy each Y row individually, advancing by the
+            // full row stride so padding bytes are skipped.
             for (int i = 0; i < height; ++i) {
-                // Copy the Y plane data to the buffer
-                std::copy(yPlane + yuvBytesOffset, yPlane + yuvBytesOffset + width, yuvBytes);
-
+                std::copy(yPlane, yPlane + width, yuvBytes + yuvBytesOffset);
                 yuvBytesOffset += width;
-                if (i < height - 1) {
-                    yPlane += padding;
-                }
+                yPlane += yPlaneStep;
             }
-//            assert(yuvBytesOffset == pixels)
         }
-        int chromaRowStride = rowStride1;
-        int chromaRowPadding = chromaRowStride - width / 2;
-        if (chromaRowPadding == 0) {
-            // When the row stride of the chroma channels equals their width, we can copy
-            // the entire channels in one go
-            std::copy(uPlane + yuvBytesOffset, yPlane + yuvBytesOffset + pixels / 4, yuvBytes);
-//                    uPlane[yuvBytes, yuvBytesOffset, pixels / 4]
+        // Copy U and V chroma planes using their own row strides (rowStride2 / rowStride3).
+        if (rowStride2 == width / 2 && rowStride3 == width / 2) {
+            // No chroma padding: copy each plane in one shot
+            std::copy(uPlane, uPlane + pixels / 4, yuvBytes + yuvBytesOffset);
             yuvBytesOffset += pixels / 4;
-            std::copy(vPlane + yuvBytesOffset, yPlane + yuvBytesOffset + pixels / 4, yuvBytes);
-//                    vPlane[yuvBytes, yuvBytesOffset, pixels / 4]
+            std::copy(vPlane, vPlane + pixels / 4, yuvBytes + yuvBytesOffset);
+            yuvBytesOffset += pixels / 4;
         } else {
-            // When not equal, we need to copy the channels row by row
+            // Chroma padding present: copy each row individually
             for (int i = 0; i < height / 2; ++i) {
-//                uPlane[yuvBytes, yuvBytesOffset, width / 2]
                 std::copy(uPlane, uPlane + width / 2, yuvBytes + yuvBytesOffset);
                 yuvBytesOffset += width / 2;
-                if (i < height / 2 - 1) {
-                    uPlane += chromaRowPadding;
-                }
+                uPlane += rowStride2;
             }
             for (int i = 0; i < height / 2; ++i) {
                 std::copy(vPlane, vPlane + width / 2, yuvBytes + yuvBytesOffset);
-//                        vPlane[yuvBytes, yuvBytesOffset, width / 2]
                 yuvBytesOffset += width / 2;
-                if (i < height / 2 - 1) {
-                    vPlane += chromaRowPadding;
-                }
+                vPlane += rowStride3;
             }
         }
         Mat yuvMat(cv::Size(width, height + height / 2), CV_8UC1, yuvBytes);
@@ -102,8 +87,13 @@ void bitmap_to_mat(JNIEnv *env, jobject &srcBitmap, Mat &srcMat) {
     void *srcPixels = 0;
     AndroidBitmapInfo srcBitmapInfo;
     try {
-        AndroidBitmap_getInfo(env, srcBitmap, &srcBitmapInfo);
-        AndroidBitmap_lockPixels(env, srcBitmap, &srcPixels);
+        if (AndroidBitmap_getInfo(env, srcBitmap, &srcBitmapInfo) < 0 ||
+            AndroidBitmap_lockPixels(env, srcBitmap, &srcPixels) < 0 ||
+            srcPixels == nullptr) {
+            jclass je = env->FindClass("java/lang/Exception");
+            env->ThrowNew(je, "Failed to access bitmap pixels");
+            return;
+        }
         uint32_t srcHeight = srcBitmapInfo.height;
         uint32_t srcWidth = srcBitmapInfo.width;
         srcMat.create(srcHeight, srcWidth, CV_8UC4);
@@ -133,8 +123,13 @@ void mat_to_bitmap(JNIEnv *env, Mat &srcMat, jobject &dstBitmap) {
     void *dstPixels = 0;
     AndroidBitmapInfo dstBitmapInfo;
     try {
-        AndroidBitmap_getInfo(env, dstBitmap, &dstBitmapInfo);
-        AndroidBitmap_lockPixels(env, dstBitmap, &dstPixels);
+        if (AndroidBitmap_getInfo(env, dstBitmap, &dstBitmapInfo) < 0 ||
+            AndroidBitmap_lockPixels(env, dstBitmap, &dstPixels) < 0 ||
+            dstPixels == nullptr) {
+            jclass je = env->FindClass("java/lang/Exception");
+            env->ThrowNew(je, "Failed to access bitmap pixels");
+            return;
+        }
         uint32_t dstHeight = dstBitmapInfo.height;
         uint32_t dstWidth = dstBitmapInfo.width;
         if (dstBitmapInfo.format == ANDROID_BITMAP_FORMAT_RGBA_8888) {

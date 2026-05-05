@@ -269,8 +269,9 @@ std::vector<std::pair<Vec3b, float>> getPaletteFrom1Row(const Mat &src, int colo
     // cout << "Palette colors " << pairs.size() << " "  << nbColors<< endl;
     if (nbColors > 0 && pairs.size() > nbColors)
     {
+        // Cap the distance so the loop always terminates (L2 RGB distance max ≈ 441).
         int distanceThreshold = 10;
-        while (pairs.size() > nbColors)
+        while (pairs.size() > nbColors && distanceThreshold <= 512)
         {
             for (int i = pairs.size() - 1; i >= 0; i--)
             {

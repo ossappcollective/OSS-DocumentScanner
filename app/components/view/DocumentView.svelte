@@ -509,6 +509,7 @@
         documentsService.on(EVENT_DOCUMENT_PAGE_DELETED, onDocumentPageDeleted);
         documentsService.on(EVENT_DOCUMENT_PAGE_UPDATED, onDocumentPageUpdated);
         documentsService.on(EVENT_DOCUMENT_PAGES_ADDED, onPagesAdded);
+        documentsService.documentRepository.incrementUsage(document).catch(() => {});
     });
     onDestroy(() => {
         DEV_LOG && console.log('DocumentView', 'onDestroy', !!document);
@@ -603,6 +604,7 @@
     async function showOptions(event) {
         const options = new ObservableArray([
             { id: 'rename', name: lc('rename'), icon: 'mdi-rename' },
+            { id: 'favorite', name: lc('toggle_favorite'), icon: document.favorite === 1 ? 'mdi-star' : 'mdi-star-outline' },
             { id: 'select_all', name: lc('select_all'), icon: 'mdi-select-all' },
             { id: 'reorder', name: lc('reorder_pages'), icon: 'mdi-reorder-horizontal' },
             { id: 'transform', name: lc('transform_images'), icon: 'mdi-auto-fix' },
@@ -618,6 +620,9 @@
                 switch (item.id) {
                     case 'rename':
                         editingTitle = true;
+                        break;
+                    case 'favorite':
+                        await document.save({ favorite: document.favorite === 1 ? 0 : 1 }, false, true);
                         break;
                     case 'select_all':
                         selectAll();
@@ -644,7 +649,7 @@
 
     const onAddButton = tryCatchFunction(
         async () => {
-            const OptionSelect = (await import('~/components/common/OptionSelect.svelte')).default;
+            const OptionSelect = (await import('@shared/components/OptionSelect.svelte')).default;
             const rowHeight = 58;
             const options = [
                 {

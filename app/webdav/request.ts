@@ -7,6 +7,7 @@ export function prepareRequestOptions(requestOptions: RequestOptions | RequestOp
     const finalOptions = { ...requestOptions, ...(userOptions || {}) } as RequestOptionsWithState;
     finalOptions.headers = mergeHeaders(context.headers, finalOptions.headers || {}, userOptions.headers || {});
     finalOptions.responseOnMainThread = false;
+    finalOptions.body = requestOptions.data as any;
 
     if (context.digest) {
         finalOptions._digest = context.digest;

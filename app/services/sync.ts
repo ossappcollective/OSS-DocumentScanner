@@ -11,6 +11,7 @@ import {
     EVENT_DOCUMENT_DELETED,
     EVENT_DOCUMENT_MOVED_FOLDER,
     EVENT_DOCUMENT_PAGES_ADDED,
+    EVENT_DOCUMENT_PAGE_DELETED,
     EVENT_DOCUMENT_PAGE_UPDATED,
     EVENT_DOCUMENT_UPDATED,
     EVENT_FOLDER_ADDED,
@@ -20,9 +21,17 @@ import {
     SETTINGS_SYNC_SERVICES
 } from '~/utils/constants';
 import type SyncWorker from '~/workers/SyncWorker';
-import { DocumentAddedEventData, DocumentDeletedEventData, DocumentEvents, DocumentPagesAddedEventData, DocumentUpdatedEventData, FolderUpdatedEventData, documentsService } from './documents';
+import {
+    DocumentAddedEventData,
+    DocumentDeletedEventData,
+    DocumentEventData,
+    DocumentEvents,
+    DocumentPagesAddedEventData,
+    DocumentUpdatedEventData,
+    FolderUpdatedEventData,
+    documentsService
+} from './documents';
 import { SYNC_TYPES, SyncType, getRemoteDeleteDocumentSettingsKey } from './sync/types';
-import { WebdavDataSyncOptions } from './sync/webdav/WebdavDataSyncService';
 import { getStoredSyncServices } from '~/services/sync/BaseSyncService';
 
 export const syncServicesStore = writable([]);
@@ -52,21 +61,6 @@ export function findArrayDiffs<S, T>(array1: S[], array2: T[], compare: (a: S, b
         union
     };
 }
-
-export const SERVICES_SYNC_TITLES: { [key in SYNC_TYPES]: string } = {
-    webdav_image: lc('webdav_server'),
-    webdav_pdf: lc('webdav_server'),
-    webdav_data: lc('webdav_server'),
-    folder_image: lc('local_folder'),
-    folder_pdf: lc('local_folder'),
-    gdrive_image: 'Google Drive',
-    gdrive_pdf: 'Google Drive',
-    gdrive_data: 'Google Drive',
-    onedrive_image: 'OneDrive',
-    onedrive_pdf: 'OneDrive',
-    onedrive_data: 'OneDrive',
-    paperless_pdf: 'Paperless-ngx'
-};
 
 export interface SyncStateEventData extends EventData {
     state: 'finished' | 'running';
@@ -120,6 +114,9 @@ export class SyncService extends BaseWorkerHandler<SyncWorker> {
             if (eventData.doc) {
                 eventData.doc = OCRDocument.fromJSON(eventData.doc);
             }
+            if (eventData.changedProps) {
+                eventData.changedProps = new Set(eventData.changedProps);
+            }
             if (eventData.documents) {
                 eventData.documents = eventData.documents.map((d) => OCRDocument.fromJSON(d));
             }
@@ -163,12 +160,12 @@ export class SyncService extends BaseWorkerHandler<SyncWorker> {
     onDocumentUpdated(event: DocumentUpdatedEventData) {
         // only used for data sync
         DEV_LOG && console.log('SYNC', 'onDocumentUpdated', event.updateModifiedDate);
-        if (event.updateModifiedDate !== false) {
-            let type = SyncType.PDF;
-            if (event.fromWorker !== true) {
-                type |= SyncType.DATA;
-            }
-            this.syncDocumentsInternal({ event, type, fromEvent: event.eventName });
+        if (event.updateModifiedDate !== false && event.fromWorker !== true) {
+            // let type = SyncType.PDF;
+            // if (event.fromWorker !== true) {
+            // let type = SyncType.DATA;
+            // }
+            this.syncDocumentsInternal({ event, type: SyncType.DATA, fromEvent: event.eventName });
         }
     }
     sendImageEvent(event: DocumentPagesAddedEventData) {
@@ -181,7 +178,10 @@ export class SyncService extends BaseWorkerHandler<SyncWorker> {
         // only used for image sync
         this.syncDocumentsInternal({ event, type: SyncType.IMAGE | SyncType.PDF, fromEvent: event.eventName });
     }
-    sendDataEvent(event: FolderUpdatedEventData) {
+    sendPDFEvent(event: DocumentPagesAddedEventData) {
+        this.syncDocumentsInternal({ event, type: SyncType.PDF, fromEvent: event.eventName });
+    }
+    sendDataEvent(event: DocumentEventData) {
         if (event.fromWorker !== true) {
             this.syncDocumentsInternal({ event, type: SyncType.DATA, fromEvent: event.eventName });
         }
@@ -244,7 +244,8 @@ export class SyncService extends BaseWorkerHandler<SyncWorker> {
             documentsService.on(EVENT_DOCUMENT_UPDATED, this.onDocumentUpdated, this);
             documentsService.on(EVENT_DOCUMENT_DELETED, this.onDocumentDeleted, this);
             documentsService.on(EVENT_DOCUMENT_PAGE_UPDATED, this.sendImageEvent, this);
-            documentsService.on(EVENT_DOCUMENT_PAGES_ADDED, this.sendImagesEvent, this);
+            documentsService.on(EVENT_DOCUMENT_PAGES_ADDED, this.sendImageEvent, this);
+            documentsService.on(EVENT_DOCUMENT_PAGE_DELETED, this.sendPDFEvent, this);
             documentsService.on(EVENT_DOCUMENT_MOVED_FOLDER, this.sendDataEvent, this);
             documentsService.on(EVENT_FOLDER_UPDATED, this.sendDataEvent, this);
             documentsService.on(EVENT_FOLDER_ADDED, this.sendDataEvent, this);
@@ -261,6 +262,7 @@ export class SyncService extends BaseWorkerHandler<SyncWorker> {
         documentsService.off(EVENT_DOCUMENT_DELETED, this.onDocumentDeleted, this);
         documentsService.off(EVENT_DOCUMENT_PAGE_UPDATED, this.sendImageEvent, this);
         documentsService.off(EVENT_DOCUMENT_PAGES_ADDED, this.sendImageEvent, this);
+        documentsService.off(EVENT_DOCUMENT_PAGE_DELETED, this.sendPDFEvent, this);
         documentsService.off(EVENT_DOCUMENT_MOVED_FOLDER, this.sendDataEvent, this);
         documentsService.off(EVENT_FOLDER_UPDATED, this.sendDataEvent, this);
         documentsService.off(EVENT_FOLDER_ADDED, this.sendDataEvent, this);
@@ -326,7 +328,7 @@ export class SyncService extends BaseWorkerHandler<SyncWorker> {
                 // } else {
                 eventData = otherProps;
                 // }
-                DEV_LOG && console.warn('syncDocumentsInternal', data.type, data.fromEvent, Object.keys(otherProps));
+                DEV_LOG && console.log('syncDocumentsInternal', data.type, data.fromEvent, Object.keys(otherProps));
             }
             await this.sendMessageToWorker(
                 'sync',

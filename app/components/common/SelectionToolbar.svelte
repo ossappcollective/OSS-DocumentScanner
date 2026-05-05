@@ -37,10 +37,9 @@
     function onLayoutChanged(event: EventData) {
         const width = Utils.layout.toDeviceIndependentPixels((event.object as View).getMeasuredWidth());
         const nbVisibleButtons = (width - 32) / $actionBarButtonHeight;
-        DEV_LOG && console.log('onLayoutChanged', width, $actionBarButtonHeight);
         if (options.length > nbVisibleButtons) {
             visibleOptions = options.slice(0, nbVisibleButtons - 1);
-            overflowOptions = options.slice(nbVisibleButtons);
+            overflowOptions = options.slice(nbVisibleButtons - 1);
             hasOverflow = true;
         } else {
             hasOverflow = false;
@@ -63,7 +62,8 @@
     transition:slide={{ duration: 200 }}>
     <stacklayout col={hasOverflow ? 1 : 0} horizontalAlignment="center" orientation="horizontal">
         {#each visibleOptions as option, index}
-            <mdbutton class="selectionToolbarButton" color={option.color || colorOnSurface} text={option.icon} variant="text" on:tap={(event) => handleAction(event, option)} />
+            {@const color = typeof option.color === 'function' ? option['color'](options) : option.color}
+            <mdbutton class="selectionToolbarButton" color={color || colorOnSurface} text={option.icon} variant="text" on:tap={(event) => handleAction(event, option)} />
         {/each}
     </stacklayout>
     {#if hasOverflow}

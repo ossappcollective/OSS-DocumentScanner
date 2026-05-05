@@ -3,22 +3,22 @@
     import { NativeViewElementNode } from '@nativescript-community/svelte-native/dom';
     import { CollectionView } from '@nativescript-community/ui-collectionview';
     import { ObservableArray } from '@nativescript/core';
+    import ListItemAutoSize from '@shared/components/ListItemAutoSize.svelte';
     import { showError } from '@shared/utils/showError';
     import { showModal } from '@shared/utils/svelte/ui';
     import CActionBar from '~/components/common/CActionBar.svelte';
-    import ListItemAutoSize from '~/components/common/ListItemAutoSize.svelte';
     import { lc, onLanguageChanged } from '~/helpers/locale';
     import { onThemeChanged } from '~/helpers/theme';
-    import { SERVICES_SYNC_TITLES, syncService } from '~/services/sync';
+    import { syncService } from '~/services/sync';
     import { LocalFolderImageSyncServiceOptions } from '~/services/sync/local/LocalFolderImageSyncService';
     import { LocalFolderPDFSyncServiceOptions } from '~/services/sync/local/LocalFolderPDFSyncService';
-    import { SERVICES_SYNC_COLOR, SyncTypes } from '~/services/sync/types';
+    import { SERVICES_SYNC_COLOR, SERVICES_SYNC_ICONS_COLORS, SyncTypes } from '~/services/sync/types';
     import { WebdavSyncOptions, createWebdavConfig } from '~/services/sync/webdav/Webdav';
     import { WebdavDataSyncOptions } from '~/services/sync/webdav/WebdavDataSyncService';
     import { ALERT_OPTION_MAX_HEIGHT } from '~/utils/constants';
     import { getDirectoryName, hideLoading, requestNotificationPermission, showAlertOptionSelect } from '~/utils/ui';
-    import { colors, windowInset } from '~/variables';
-    type Item = BaseSyncServiceOptions & { title?: string; description?: string };
+    import { colors, fontScale, fonts, windowInset } from '~/variables';
+    type Item = BaseSyncServiceOptions & { title?: string; description?: string; syncColor?: string };
 
     import type GoogleDriveDataSyncSettings__SvelteComponent_ from '~/components/settings/sync/gdrive/GoogleDriveDataSyncSettings.svelte';
     import type GoogleDriveImageSyncSettings__SvelteComponent_ from '~/components/settings/sync/gdrive/GoogleDriveImageSyncSettings.svelte';
@@ -28,15 +28,17 @@
     import type OneDriveDataSyncSettings__SvelteComponent_ from '~/components/settings/sync/onedrive/OneDriveDataSyncSettings.svelte';
     import type OneDriveImageSyncSettings__SvelteComponent_ from '~/components/settings/sync/onedrive/OneDriveImageSyncSettings.svelte';
     import type OneDrivePDFSyncSettings__SvelteComponent_ from '~/components/settings/sync/onedrive/OneDrivePDFSyncSettings.svelte';
+    import type PaperlessNgxPDFSyncSettings__SvelteComponent_ from '~/components/settings/sync/paperless/PaperlessNgxPDFSyncSettings.svelte';
     import type WebdavDataSyncSettings__SvelteComponent_ from '~/components/settings/sync/webdav/WebdavDataSyncSettings.svelte';
     import type WebdavImageSyncSettings__SvelteComponent_ from '~/components/settings/sync/webdav/WebdavImageSyncSettings.svelte';
     import type WebdavPDFSyncSettings__SvelteComponent_ from '~/components/settings/sync/webdav/WebdavPDFSyncSettings.svelte';
-    import type PaperlessNgxPDFSyncSettings__SvelteComponent_ from '~/components/settings/sync/paperless/PaperlessNgxPDFSyncSettings.svelte';
     import { BaseDataSyncServiceOptions } from '~/services/sync/BaseDataSyncService';
     import { BaseSyncServiceOptions } from '~/services/sync/BaseSyncService';
     import { GoogleDriveSyncOptions } from '~/services/sync/gdrive/GoogleDrive';
     import { OneDriveSyncOptions } from '~/services/sync/onedrive/OneDrive';
     import type { PaperlessNgxSyncOptions } from '~/services/sync/paperless/PaperlessNgx';
+    import { SERVICES_SYNC_TITLES } from '~/services/sync/ui';
+
     interface SettingsComponentReturnType {
         [SyncTypes.folder_image]: typeof FolderImageSyncSettings__SvelteComponent_;
         [SyncTypes.folder_pdf]: typeof FolderPDFSyncSettings__SvelteComponent_;
@@ -101,25 +103,15 @@
     function refresh() {
         const newItems: Item[] = options || [];
 
-        items = new ObservableArray(newItems);
+        items = new ObservableArray(newItems.map(prepareItem));
     }
     refresh();
 
-    function updateItem(item, key = 'key') {
-        const index = items.findIndex((it) => it[key] === item[key]);
-        if (index !== -1) {
-            items.setItem(index, item);
-        }
-    }
-    async function onRightIconTap(item, event) {
-        try {
-            const needsUpdate = await item.onRightIconTap?.(item, event);
-            if (needsUpdate) {
-                updateItem(item);
-            }
-        } catch (error) {
-            showError(error);
-        }
+    function prepareItem(item: Item) {
+        const iconData = SERVICES_SYNC_ICONS_COLORS[item.type.split('_')[0]];
+        const { color, ...others } = item;
+        DEV_LOG && console.log('prepareItem0', item.type, iconData);
+        return { ...others, syncColor: color, title: getTitle(item), subtitle: getDescription(item), icon: iconData?.icon, iconColor: iconData?.color, iconFontFamily: iconData?.fontFamily };
     }
     async function onItemTap(item: Item, event) {
         try {
@@ -211,9 +203,9 @@
             }
             if (configToUpdate) {
                 syncService.updateService(configToUpdate);
-                const index = items.indexOf(item);
+                const index = items.findIndex((d) => d.id === item.id);
                 if (index !== -1) {
-                    items.splice(index, 1, configToUpdate);
+                    items.splice(index, 1, prepareItem(configToUpdate));
                 }
             }
         } catch (err) {
@@ -241,10 +233,17 @@
                 case 'add':
                     const options = Object.keys(SERVICES_SYNC_TITLES)
                         .filter((s) => s.endsWith(type))
-                        .map((s) => ({
-                            data: s,
-                            name: SERVICES_SYNC_TITLES[s]
-                        }));
+                        .map((s) => {
+                            const key = s.split('_')[0];
+                            const iconData = SERVICES_SYNC_ICONS_COLORS[key];
+                            return {
+                                data: s,
+                                icon: iconData?.icon,
+                                iconColor: iconData?.color,
+                                iconFontFamily: iconData?.fontFamily,
+                                name: SERVICES_SYNC_TITLES[s]
+                            };
+                        });
                     const selection = await showAlertOptionSelect(
                         {
                             fontWeight: 'normal',
@@ -349,7 +348,7 @@
                         if (configToAdd) {
                             const data = syncService.addService(selection?.data, configToAdd);
                             DEV_LOG && console.log('adding item', data);
-                            items.push(data);
+                            items.push(prepareItem(data));
                         }
                     }
             }
@@ -367,7 +366,7 @@
     onThemeChanged(refreshCollectionView);
 
     function getTitle(item: Item) {
-        const result = SERVICES_SYNC_TITLES[item.type] + ': ';
+        const result = SERVICES_SYNC_TITLES[item.type];
         switch (item.type) {
             case 'gdrive_data':
             case 'gdrive_pdf':
@@ -396,10 +395,10 @@
                 if (!url.startsWith('http')) {
                     url = 'https://' + url;
                 }
-                return result + url.split('//')[1].split('/')[0];
+                return result + ': ' + url.split('//')[1].split('/')[0];
             case 'folder_image':
             case 'folder_pdf':
-                return result + getDirectoryName((item as LocalFolderImageSyncServiceOptions).localFolderPath);
+                return result;
             default:
                 return item.title;
         }
@@ -412,13 +411,16 @@
                 return (item as WebdavDataSyncOptions).remoteFolder;
             // case 'folder_image':
             //     return (item as LocalFolderImageSyncServiceOptions).localFolderPath;
+            case 'folder_image':
+            case 'folder_pdf':
+                return getDirectoryName((item as LocalFolderImageSyncServiceOptions).localFolderPath);
             default:
                 return item.description;
         }
     }
 
     function getSyncColor(item: Item) {
-        return item.color || SERVICES_SYNC_COLOR[item.type];
+        return item.syncColor || SERVICES_SYNC_COLOR[item.type];
     }
 
     function selectTemplate(item, index, items) {
@@ -461,15 +463,24 @@
                     startingSide={item.startingSide}
                     translationFunction={drawerTranslationFunction}>
                     <ListItemAutoSize
-                        prop:mainContent
                         borderLeftColor={getSyncColor(item)}
                         borderLeftWidth={5}
-                        fontSize={20}
-                        rightValue={item.rightValue}
+                        columns="auto,*,auto"
+                        {item}
+                        mainCol={1}
+                        prop:mainContent
                         showBottomLine={false}
-                        subtitle={getDescription(item)}
-                        title={getTitle(item)}
-                        on:tap={(event) => onItemTap(item, event)} />
+                        on:tap={(event) => onItemTap(item, event)}>
+                        <label
+                            col={0}
+                            color={item.iconColor || colorOnSurface}
+                            fontFamily={item.iconFontFamily || $fonts.mdi}
+                            fontSize={(item.iconFontSize || 24) * $fontScale}
+                            paddingLeft="8"
+                            text={item.icon}
+                            verticalAlignment="center"
+                            width={(item.iconFontSize || 24) * 2} />
+                    </ListItemAutoSize>
                     <label
                         class="mdi"
                         backgroundColor={colorError}

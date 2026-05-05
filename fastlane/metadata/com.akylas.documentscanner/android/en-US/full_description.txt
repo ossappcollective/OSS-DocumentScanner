@@ -1,3 +1,41 @@
-<p>The <i>OSS Document Scanner</i> is an Open Source app to scan all your documents. You either scan using your camera or by importing an image. The app will automatically detect you document within the photo and will crop the image.</p>
-<p>Once the document is created you can detect text within the document using OCR.</p>
-<p>You can also share your document as a PDF. If you want you can synchronize the app data with a WebDAV server (like Nextcloud) to never loose anything!</p>
+The OSS Document Scanner is a free and Open Source app to transform your mobile device into a powerful document scanner.
+
+SCAN
+* Scan your documents or receipts with a fast camera scan.
+* Enjoy the automatic edge detection feature allowing you to quickly scan many documents
+* Bulk scan documents or book pages
+* Import documents from images or even existing PDF
+* You can scan to PDF any kind of document: Receipts, IDs, notes, recipes, photos, business cards, whiteboards, books. You can then use and work with the generated PDFs on all your devices, phones, computers, tablets...
+
+ENHANCE
+* Improve PDFs quality by applying enhancing filters for color or black & white documents.
+* Edit crop
+* Reorder pages, merge documents
+* Rotate pages
+* Change brightness and contrast to create beautiful documents
+
+ORGANIZE
+* Create folders with colors for easy access
+* Sort documents
+* Name documents
+
+EXPORT
+* create PDF directly from your mobile device by converting photos, images, other documents, into beautiful and configurable PDFs.
+* export and share your documents to PDF or JPEG or PNG with your friends, family, colleagues
+
+SEARCH
+* OCR your documents using offline (to be downloaded first) and open source models in many languages.
+* Generate searchable PDFs by converting images to text using the powerful OCR models from the Tesseract project.
+
+SECURITY
+* Improve the security of your generated PDF by adding a password.
+
+SYNC
+* Synchronize your documents, PDFs, Images with your computers, other devices or local folder sync.
+* Sync using WebDAV, Google Drive, OneDrive
+
+PRIVACY
+* Use a free and Open Source document scanner to protect your privacy
+
+COMMUNITY
+* Provide feedback or even help translate the app. You are part of this project and you make help it grow so that everyone can enjoy the best free and open source document scanner

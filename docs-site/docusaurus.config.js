@@ -18,11 +18,11 @@ const config = {
     url: 'https://www.akylas.fr',
     // Set the /<baseUrl>/ pathname under which your site is served
     // For GitHub pages deployment, it is often '/<projectName>/'
-    baseUrl: '/OSS-DocumentScanner/',
+    baseUrl: '/',
 
     // GitHub pages deployment config.
     // If you aren't using GitHub pages, you don't need these.
-    organizationName: 'Akylas', // Usually your GitHub org/user name.
+    organizationName: 'OSS-DocumentScanner', // Usually your GitHub org/user name.
     projectName: 'OSS-DocumentScanner', // Usually your repo name.
     trailingSlash: false,
 
@@ -248,6 +248,15 @@ const config = {
                             {
                                 label: 'App Store (CardWallet)',
                                 href: 'https://apps.apple.com/app/oss-cardwallet/id6504414362'
+                            }
+                        ]
+                    },
+                    {
+                        title: 'Privacy',
+                        items: [
+                            {
+                                label: 'Privacy policy',
+                                href: 'https://www.akylas.fr/privacy'
                             }
                         ]
                     }

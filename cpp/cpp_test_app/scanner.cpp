@@ -21,6 +21,11 @@
 // #include <DocumentOCR.h>
 #include <jsoncons/json.hpp>
 
+#include <QApplication>
+#include <QScreen>
+#include <QWidget>
+#include <QTimer>
+
 using namespace cv;
 using namespace std;
 
@@ -257,78 +262,545 @@ void preprocess_ocr(const Mat &image, const Mat &rgb)
     cv::adaptiveThreshold(rgb, rgb, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 197, 48);
 }
 
+// void updateImage()
+// {
+
+//     if (!canUpdateImage) {
+//         return;
+//     }
+//     docDetector.options.cannyFactor = cannyFactor / 100;
+//     // docDetector.cannyThreshold1 = cannyThreshold1;
+//     // docDetector.cannyThreshold2 = cannyThreshold2;
+//     docDetector.options.dilateAnchorSize = dilateAnchorSize;
+//     // docDetector.dilateAnchorSizeBefore = dilateAnchorSizeBefore;
+//     // docDetector.dilateAnchorSizeBefore = dilateAnchorSizeBefore;
+//     docDetector.options.houghLinesThreshold = houghLinesThreshold;
+//     docDetector.options.houghLinesMinLineLength = houghLinesMinLineLength;
+//     docDetector.options.houghLinesMaxLineGap = houghLinesMaxLineGap;
+//     // docDetector.adapThresholdBlockSize = adapThresholdBlockSize;
+//     // docDetector.adapThresholdC = adapThresholdC;
+//     docDetector.options.morphologyAnchorSize = morphologyAnchorSize;
+//     // docDetector.shouldNegate = shouldNegate;
+//     docDetector.options.useChannel = useChannel - 1;
+//     docDetector.options.bilateralFilterValue = bilateralFilterValue;
+//     docDetector.options.thresh = thresh;
+//     docDetector.options.threshMax = threshMax;
+//     // docDetector.gammaCorrection = gammaCorrection / 10.0;
+//     docDetector.options.contoursApproxEpsilonFactor = contoursApproxEpsilonFactor / 1000.0;
+//     // if (gaussianBlur > 0 && gaussianBlur % 2 == 0)
+//     // {
+//     //     docDetector.gaussianBlur = gaussianBlur + 1;
+//     // }
+//     // else
+//     // {
+//     //     docDetector.gaussianBlur = gaussianBlur;
+//     // }
+//     if (medianBlurValue > 0 && medianBlurValue % 2 == 0)
+//     {
+//         docDetector.options.medianBlurValue = medianBlurValue + 1;
+//     }
+//     else
+//     {
+//         docDetector.options.medianBlurValue = medianBlurValue;
+//     }
+//     docDetector.image = image;
+//     resizedImage = docDetector.resizeImageMax();
+
+//     detector::DocumentDetector::PageSplitResult split = docDetector.detectGutterAndSplit(resizedImage, 0.4f);
+
+//     vector<vector<cv::Point>> pointsList;
+//     // If a gutter was found, scan each page sub-image and merge results into original coordinate system
+//     if (split.foundGutter)
+//     {
+//         Mat combinedEdged = Mat::zeros(resizedImage.size(), CV_8U);
+//         // helper lambda to scan a ROI and merge results
+//         auto scanAndMerge = [&](const Rect &r) {
+//             if (r.width <= 0 || r.height <= 0) return;
+//             Mat subImg = resizedImage(r);
+//             imshow("subImg", subImg);
+//          Mat subEdged;
+//             vector<vector<Point>> subList = docDetector.scanPoint(subEdged, subImg, true);
+//             // copy subEdged into combinedEdged for display
+//             if (!subEdged.empty())
+//             {
+//                 // ensure types match
+//                 if (subEdged.type() != combinedEdged.type()) cv::cvtColor(subEdged, subEdged, COLOR_BGR2GRAY);
+//                 subEdged.copyTo(combinedEdged(r));
+//             }
+//             // offset points from sub-image to full image coordinates (respecting detector scaling)
+//             double scaleFactor = docDetector.resizeScale * docDetector.scale;
+//             Point offset(static_cast<int>(r.x * scaleFactor), static_cast<int>(r.y * scaleFactor));
+//             for (auto &contour : subList)
+//             {
+//                 for (auto &pt : contour)
+//                 {
+//                     pt += offset;
+//                 }
+//                 pointsList.push_back(contour);
+//             }
+//         };
+
+//         if (split.hasLeft) scanAndMerge(split.leftPage);
+//         if (split.hasRight) scanAndMerge(split.rightPage);
+
+//         // if nothing detected on both sides, fallback to whole image scan
+//         if (pointsList.empty())
+//         {
+//             pointsList = docDetector.scanPoint(edged, resizedImage, true);
+//         }
+//         else
+//         {
+//             // use combined edged for display
+//             edged = combinedEdged;
+//         }
+//     }
+//     else
+//     {
+//         // no gutter: scan whole image as before
+//         pointsList = docDetector.scanPoint(edged, resizedImage, true);
+//     }
+ 
+//      if (pointsList.size() == 0)
+//      {
+//          vector<cv::Point> points;
+//          points.push_back(cv::Point(0, 0));
+//          points.push_back(cv::Point(image.cols, 0));
+//          points.push_back(cv::Point(image.cols, image.rows));
+//          points.push_back(cv::Point(0, image.rows));
+//          pointsList.push_back(points);
+//      }
+
+//     // for (size_t i = 0; i < pointsList.size(); i++)
+//     // {
+//     //     vector<cv::Point> orderedPoints;
+//     //     orderPoints(pointsList[i], orderedPoints);
+//     // }
+
+//     if (pointsList.size() > 0)
+//     {
+//         // cv::polylines(resizedImage, pointsList[0], true, Scalar(255, 0, 0), 2, 8);
+//         // vector<cv::Point> orderedPoints;
+//         // orderPoints(pointsList[0], orderedPoints);
+//         warped = cropAndWarp(image, pointsList[0]);
+//         if (whitepaper == 1)
+//         {
+//             string s;
+//             encode_json(whitepaperOptions, s, jsoncons::indenting::no_indent);
+//             detector::DocumentDetector::applyTransforms(warped, "whitepaper_" + s);
+//         }
+//         if (whitepaper2 == 1)
+//         {
+//             string s;
+//             encode_json(whitepaperOptions, s, jsoncons::indenting::no_indent);
+//             detector::DocumentDetector::applyTransforms(warped, "whitepaper2_" + s);
+//         }
+//         if (enhance == 1)
+//         {
+//             detector::DocumentDetector::applyTransforms(warped, "enhance");
+//         }
+//         // if (process1 == 1)
+//         // {
+//         //     // warped = quantizeImage(warped, 2);
+//         //     processColors(warped);
+//         //     // cv::stylization(warped, warped, 60, 0.07);
+//         // }
+//         if (colors == 1)
+//         {
+//             std::stringstream stream;
+//             stream << "colors_" << colorsResizeThreshold << "_" << colorsFilterDistanceThreshold << "_" << distanceThreshold << "_" << (colorSpace - 1);
+//             // detector::DocumentDetector::applyTransforms(warped, stream.str());
+//             std::vector<std::pair<Vec3b, float>> colors = colorSimplificationTransform(warped, warped, false, colorsResizeThreshold, colorsFilterDistanceThreshold, distanceThreshold, paletteNbColors, (ColorSpace)(colorSpace), (ColorSpace)(paletteColorSpace));
+//             for (int index = 0; index < colors.size(); ++index)
+//             {
+//                 auto color = colors.at(index).first;
+//                 auto rbgColor = ColorSpaceToBGR(color, (ColorSpace)(colorSpace));
+//                 std::stringstream stream;
+//                 stream << "\e[48;2;" << (int)rbgColor(2) << ";" << (int)rbgColor(1) << ";" << (int)rbgColor(0) << "m   \e[0m";
+//                 // ESC[48;2;⟨r⟩;⟨g⟩;⟨b⟩m
+//                 //     __android_log_print(ANDROID_LOG_INFO, "JS", "Color  Color %s Area: %f% %d\n", rgbSexString(HLStoBGR(color.first)).c_str(), 100.f * float(color.second) / n, colors.size());
+//                 cout << stream.str() << "Color: " << colors.size() << " - Hue: " << (int)color(0) << " - Lightness: " << (int)color(1) << " - Saturation: " << (int)color(2) << " " << BGRHexString(rbgColor) << " - Area: " << 100.f * (colors.at(index).second) << "%" << endl;
+//                 rectangle(warped, cv::Rect(index * 60, 0, 60, 60), Scalar(rbgColor(0), rbgColor(1), rbgColor(2)), -1);
+//             }
+
+//             // processColors2(warped);
+//             // cv::stylization(warped, warped, 60, 0.07);
+//         }
+//     }
+//     else
+//     {
+//         warped = Mat();
+//     }
+//     imshow("SourceImage", resizedImage);
+//     imshow("Edges", edged);
+//     if (!warped.empty())
+//     {
+
+//         // if (tesseractDemo)
+//         // {
+//         //     // warped = resizeImageToThreshold(warped, 500, 0);
+//         //     // Mat toTest;
+//         //     // preprocess_ocr(warped, toTest);
+//         //     // cvtColor(warped, toTest, COLOR_BGR2GRAY);
+//         //     // tesseractTest(warped, warped);
+//         //     // detectTextOrientation(toTest);
+//         //     // Mat res;
+//         //     detector::DocumentOCR::DetectOptions options;
+//         //     options.dataPath = "/home/mguillon/Downloads/tesseract/best";
+//         //     options.language = "fra";
+//         //     options.adapThresholdBlockSize = adapThresholdBlockSize;
+//         //     options.adapThresholdC = adapThresholdC;
+//         //     options.desseractDetectContours = desseractDetectContours;
+//         //     options.tesseractDemo = tesseractDemo;
+//         //     options.actualTesseractDetect = actualTesseractDetect;
+//         //     options.textDetectDilate = textDetectDilate;
+//         //     options.textDetect1 = textDetect1;
+//         //     options.textDetect2 = textDetect2;
+//         //     double t_r = (double)getTickCount();
+//         //     std::optional<detector::DocumentOCR::OCRResult> result = detector::DocumentOCR::detectTextImpl(warped, warped, options, std::nullopt);
+//         //     cout << "TIME_OCR = " << ((double)getTickCount() - t_r) * 1000 / getTickFrequency() << endl;
+//         //     if (result != std::nullopt)
+//         //     {
+//         //         float scale_img = 600.f / warped.rows;
+//         //         float scale_font = (float)(2 - scale_img) / 1.4f;
+//         //         auto ocrResult = *std::move(result);
+//         //         for (int j = 0; j < ocrResult.blocks.size(); j++)
+//         //         {
+//         //             detector::DocumentOCR::OCRData data = ocrResult.blocks[j];
+//         //             rectangle(warped, data.box.tl(), data.box.br(), Scalar(255, 0, 255), 3);
+//         //             Size word_size = getTextSize(data.text, FONT_HERSHEY_SIMPLEX, (double)scale_font, (int)(3 * scale_font), NULL);
+//         //             rectangle(warped, data.box.tl() - Point(3, word_size.height + 3), data.box.tl() + Point(word_size.width, 0), Scalar(255, 0, 255), -1);
+//         //             putText(warped, data.text, data.box.tl() - Point(1, 1), FONT_HERSHEY_SIMPLEX, scale_font, Scalar(255, 255, 255), (int)(3 * scale_font));
+//         //         }
+//         //     }
+//         //     // detect_text(warped, warped);
+//         // }
+
+//         imshow("Warped", warped);
+//     }
+//     else
+//     {
+//         // destroyWindow("Warped");
+//         // namedWindow("Warped", WINDOW_KEEPRATIO);
+//         // moveWindow("Warped", 900, 100);
+//     }
+// }
+
+
+// Enhanced UI State Manager
+class UIManager {
+public:
+    enum class ViewMode {
+        SOURCE,
+        EDGES,
+        WARPED,
+        COMPARE
+    };
+    
+    enum class Algorithm {
+        NONE,
+        WHITEPAPER,
+        WHITEPAPER2,
+        WHITEPAPER_FAST,
+        ENHANCE,
+        COLORS
+    };
+    
+    ViewMode currentView = ViewMode::SOURCE;
+    Algorithm selectedAlgorithm = Algorithm::NONE;
+    
+    bool showSourceOverlay = true;
+    bool showEdgesOverlay = false;
+    bool showWarpedOverlay = false;
+    
+    std::map<Algorithm, std::string> algorithmNames = {
+        {Algorithm::NONE, "None"},
+        {Algorithm::WHITEPAPER, "Whitepaper"},
+        {Algorithm::WHITEPAPER2, "Whitepaper 2"},
+        {Algorithm::WHITEPAPER_FAST, "Whitepaper Fast"},
+        {Algorithm::ENHANCE, "Enhance"},
+        {Algorithm::COLORS, "Colors"}
+    };
+    
+    std::map<Algorithm, bool> algorithmEnabled = {
+        {Algorithm::WHITEPAPER, false},
+        {Algorithm::WHITEPAPER2, false},
+        {Algorithm::WHITEPAPER_FAST, false},
+        {Algorithm::ENHANCE, false},
+        {Algorithm::COLORS, false}
+    };
+    
+    void toggleAlgorithm(Algorithm algo) {
+        // Disable all others
+        for (auto& pair : algorithmEnabled) {
+            pair.second = false;
+        }
+        // Enable selected
+        algorithmEnabled[algo] = true;
+        selectedAlgorithm = algo;
+    }
+    
+    std::string getStatusText() {
+        std::stringstream ss;
+        ss << "View: ";
+        switch(currentView) {
+            case ViewMode::SOURCE: ss << "Source"; break;
+            case ViewMode::EDGES: ss << "Edges"; break;
+            case ViewMode::WARPED: ss << "Warped"; break;
+            case ViewMode::COMPARE: ss << "Compare"; break;
+        }
+        ss << " | Algorithm: " << algorithmNames[selectedAlgorithm];
+        return ss.str();
+    }
+};
+
+
+
+UIManager uiManager;
+
+// Helper function to get window info
+struct WindowInfo {
+    int width;
+    int height;
+    float dpiScale;
+};
+
+
+WindowInfo getWindowInfo(const std::string& windowName) {
+    WindowInfo info;
+    
+    // Try to get window from Qt
+    QWidget* window = nullptr;
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        if (widget->windowTitle().toStdString() == windowName) {
+            window = widget;
+            break;
+        }
+    }
+    
+    if (window) {
+        // Get actual window size from Qt widget
+        info.width = window->width();
+        info.height = window->height();
+    } else {
+        // Fallback to OpenCV method
+        auto rect = cv::getWindowImageRect(windowName);
+        info.width = rect.width > 0 ? rect.width : 1200;
+        info.height = rect.height > 0 ? rect.height : 800;
+    }
+    
+    // Get DPI scale from Qt
+    info.dpiScale = 1.0f;
+    if (QApplication::primaryScreen()) {
+        info.dpiScale = QApplication::primaryScreen()->devicePixelRatio();
+    }
+    
+    return info;
+}
+
+void renderUI() {
+    // Get actual window dimensions and DPI
+    WindowInfo winInfo = getWindowInfo("Document Scanner Test");
+    
+    // Reserve space for UI elements
+    const int statusHeight = 60 * winInfo.dpiScale;
+    const int helpHeight = 40 * winInfo.dpiScale;
+    const int totalUIHeight = statusHeight + helpHeight;
+    
+    // Available space for image
+    const int availableWidth = winInfo.width;
+    const int availableHeight = winInfo.height - totalUIHeight;
+    
+    // Get the display image based on current view
+    Mat display;
+    
+    switch(uiManager.currentView) {
+        case UIManager::ViewMode::SOURCE:
+            // Use original image instead of resizedImage for better quality
+            display = image.clone();
+            break;
+        case UIManager::ViewMode::EDGES:
+            // Scale edges back to original image size for display
+            if (!edged.empty()) {
+                Mat edgedDisplay;
+                if (edged.channels() == 1) {
+                    cvtColor(edged, edgedDisplay, COLOR_GRAY2BGR);
+                } else {
+                    edgedDisplay = edged.clone();
+                }
+                // Scale to original image size
+                double scaleBack = (double)image.rows / resizedImage.rows;
+                resize(edgedDisplay, display, Size(), scaleBack, scaleBack, INTER_LINEAR);
+            } else {
+                display = image.clone();
+            }
+            break;
+        case UIManager::ViewMode::WARPED:
+            if (!warped.empty()) {
+                display = warped.clone();
+            } else {
+                display = Mat::zeros(availableHeight, availableWidth, CV_8UC3);
+                putText(display, "No warped image available", 
+                       Point(200, 300), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 2);
+            }
+            break;
+        case UIManager::ViewMode::COMPARE: {
+            // Side by side comparison using original image
+            Mat left = image.clone();
+            Mat right = warped.empty() ? Mat::zeros(image.size(), CV_8UC3) : warped.clone();
+            
+            // Resize to same height
+            if (right.rows != left.rows) {
+                double scale = (double)left.rows / right.rows;
+                resize(right, right, Size(right.cols * scale, left.rows));
+            }
+            
+            display = Mat(left.rows, left.cols + right.cols + 10, CV_8UC3, Scalar(0, 0, 0));
+            left.copyTo(display(Rect(0, 0, left.cols, left.rows)));
+            right.copyTo(display(Rect(left.cols + 10, 0, right.cols, right.rows)));
+            
+            // Draw separator
+            line(display, Point(left.cols + 5, 0), Point(left.cols + 5, display.rows), 
+                 Scalar(255, 255, 255), 2);
+            break;
+        }
+    }
+    
+    // Scale image to fit available space while maintaining aspect ratio
+    Mat scaledDisplay;
+    if (!display.empty()) {
+        double scaleX = (double)availableWidth / display.cols;
+        double scaleY = (double)availableHeight / display.rows;
+        double displayScale = std::min(scaleX, scaleY);
+        
+        if (displayScale != 1.0) {
+            int newWidth = (int)(display.cols * displayScale);
+            int newHeight = (int)(display.rows * displayScale);
+            resize(display, scaledDisplay, Size(newWidth, newHeight), 0, 0, INTER_LINEAR);
+        } else {
+            scaledDisplay = display;
+        }
+    } else {
+        scaledDisplay = Mat::zeros(availableHeight, availableWidth, CV_8UC3);
+    }
+    
+    // Center the image in available space
+    Mat imageArea = Mat::zeros(availableHeight, availableWidth, CV_8UC3);
+    int xOffset = (availableWidth - scaledDisplay.cols) / 2;
+    int yOffset = (availableHeight - scaledDisplay.rows) / 2;
+    if (xOffset >= 0 && yOffset >= 0) {
+        scaledDisplay.copyTo(imageArea(Rect(xOffset, yOffset, scaledDisplay.cols, scaledDisplay.rows)));
+    } else {
+        scaledDisplay.copyTo(imageArea);
+    }
+    
+    // Create status bar at full window width
+    Mat statusBar(statusHeight, availableWidth, CV_8UC3, Scalar(40, 40, 40));
+    
+    // Scale UI elements based on DPI
+    float fontScale = 0.7f * winInfo.dpiScale;
+    int thickness = std::max(1, (int)(2 * winInfo.dpiScale));
+    
+    std::string statusText = uiManager.getStatusText();
+    putText(statusBar, statusText, Point(15 * winInfo.dpiScale, 32 * winInfo.dpiScale), 
+            FONT_HERSHEY_SIMPLEX, fontScale, Scalar(255, 255, 255), thickness, LINE_AA);
+    
+    // Add algorithm buttons
+    int btnWidth = 80 * winInfo.dpiScale;
+    int btnHeight = 40 * winInfo.dpiScale;
+    int btnSpacing = 5 * winInfo.dpiScale;
+    int btnY = (statusHeight - btnHeight) / 2;
+    int totalButtonWidth = 6 * (btnWidth + btnSpacing);
+    int btnX = availableWidth - totalButtonWidth - 15 * winInfo.dpiScale;
+    
+    for (int i = 0; i < 6; i++) {
+        UIManager::Algorithm algo = static_cast<UIManager::Algorithm>(i);
+        bool isActive = uiManager.algorithmEnabled[algo];
+        Scalar btnColor = isActive ? Scalar(0, 200, 0) : Scalar(80, 80, 80);
+        Scalar textColor = isActive ? Scalar(255, 255, 255) : Scalar(180, 180, 180);
+        
+        int x = btnX + i * (btnWidth + btnSpacing);
+        rectangle(statusBar, Point(x, btnY), Point(x + btnWidth, btnY + btnHeight), btnColor, -1);
+        rectangle(statusBar, Point(x, btnY), Point(x + btnWidth, btnY + btnHeight), 
+                 Scalar(200, 200, 200), std::max(1, (int)winInfo.dpiScale), LINE_AA);
+        
+        std::string shortName = uiManager.algorithmNames[algo];
+        if (shortName.length() > 7) shortName = shortName.substr(0, 7);
+        
+        float btnFontScale = 0.4f * winInfo.dpiScale;
+        int baseline = 0;
+        Size textSize = getTextSize(shortName, FONT_HERSHEY_SIMPLEX, btnFontScale, 1, &baseline);
+        Point textOrg(x + (btnWidth - textSize.width) / 2, btnY + (btnHeight + textSize.height) / 2);
+        
+        putText(statusBar, shortName, textOrg, 
+                FONT_HERSHEY_SIMPLEX, btnFontScale, textColor, 1, LINE_AA);
+    }
+    
+    // Create help bar at full window width
+    Mat helpBar(helpHeight, availableWidth, CV_8UC3, Scalar(30, 30, 30));
+    std::string helpText = "Keys: [1-4] Views | [Q-Y] Algorithms | [N]ext/[P]rev Image | [Space] Settings | [ESC] Exit";
+    float helpFontScale = 0.5f * winInfo.dpiScale;
+    putText(helpBar, helpText, Point(15 * winInfo.dpiScale, 23 * winInfo.dpiScale), 
+            FONT_HERSHEY_SIMPLEX, helpFontScale, Scalar(200, 200, 200), 1, LINE_AA);
+    
+    // Combine all elements into final window-sized image
+    Mat final(winInfo.height, availableWidth, CV_8UC3, Scalar(0, 0, 0));
+    imageArea.copyTo(final(Rect(0, 0, availableWidth, availableHeight)));
+    statusBar.copyTo(final(Rect(0, availableHeight, availableWidth, statusHeight)));
+    helpBar.copyTo(final(Rect(0, availableHeight + statusHeight, availableWidth, helpHeight)));
+    
+    imshow("Document Scanner Test", final);
+}
+
 void updateImage()
 {
-
     if (!canUpdateImage) {
         return;
     }
-    docDetector.options.cannyFactor = cannyFactor / 100;
-    // docDetector.cannyThreshold1 = cannyThreshold1;
-    // docDetector.cannyThreshold2 = cannyThreshold2;
+    
+    // Update detector options
+    docDetector.options.cannyFactor = cannyFactor / 100.0;
     docDetector.options.dilateAnchorSize = dilateAnchorSize;
-    // docDetector.dilateAnchorSizeBefore = dilateAnchorSizeBefore;
-    // docDetector.dilateAnchorSizeBefore = dilateAnchorSizeBefore;
     docDetector.options.houghLinesThreshold = houghLinesThreshold;
     docDetector.options.houghLinesMinLineLength = houghLinesMinLineLength;
     docDetector.options.houghLinesMaxLineGap = houghLinesMaxLineGap;
-    // docDetector.adapThresholdBlockSize = adapThresholdBlockSize;
-    // docDetector.adapThresholdC = adapThresholdC;
     docDetector.options.morphologyAnchorSize = morphologyAnchorSize;
-    // docDetector.shouldNegate = shouldNegate;
     docDetector.options.useChannel = useChannel - 1;
     docDetector.options.bilateralFilterValue = bilateralFilterValue;
     docDetector.options.thresh = thresh;
     docDetector.options.threshMax = threshMax;
-    // docDetector.gammaCorrection = gammaCorrection / 10.0;
     docDetector.options.contoursApproxEpsilonFactor = contoursApproxEpsilonFactor / 1000.0;
-    // if (gaussianBlur > 0 && gaussianBlur % 2 == 0)
-    // {
-    //     docDetector.gaussianBlur = gaussianBlur + 1;
-    // }
-    // else
-    // {
-    //     docDetector.gaussianBlur = gaussianBlur;
-    // }
-    if (medianBlurValue > 0 && medianBlurValue % 2 == 0)
-    {
+    
+    if (medianBlurValue > 0 && medianBlurValue % 2 == 0) {
         docDetector.options.medianBlurValue = medianBlurValue + 1;
-    }
-    else
-    {
+    } else {
         docDetector.options.medianBlurValue = medianBlurValue;
     }
+    
     docDetector.image = image;
     resizedImage = docDetector.resizeImageMax();
 
     detector::DocumentDetector::PageSplitResult split = docDetector.detectGutterAndSplit(resizedImage, 0.4f);
 
     vector<vector<cv::Point>> pointsList;
-    // If a gutter was found, scan each page sub-image and merge results into original coordinate system
-    if (split.foundGutter)
-    {
+    
+    if (split.foundGutter) {
         Mat combinedEdged = Mat::zeros(resizedImage.size(), CV_8U);
-        // helper lambda to scan a ROI and merge results
         auto scanAndMerge = [&](const Rect &r) {
             if (r.width <= 0 || r.height <= 0) return;
             Mat subImg = resizedImage(r);
-            imshow("subImg", subImg);
-         Mat subEdged;
+            Mat subEdged;
             vector<vector<Point>> subList = docDetector.scanPoint(subEdged, subImg, true);
-            // copy subEdged into combinedEdged for display
-            if (!subEdged.empty())
-            {
-                // ensure types match
-                if (subEdged.type() != combinedEdged.type()) cv::cvtColor(subEdged, subEdged, COLOR_BGR2GRAY);
+            
+            if (!subEdged.empty()) {
+                if (subEdged.type() != combinedEdged.type()) 
+                    cv::cvtColor(subEdged, subEdged, COLOR_BGR2GRAY);
                 subEdged.copyTo(combinedEdged(r));
             }
-            // offset points from sub-image to full image coordinates (respecting detector scaling)
+            
             double scaleFactor = docDetector.resizeScale * docDetector.scale;
             Point offset(static_cast<int>(r.x * scaleFactor), static_cast<int>(r.y * scaleFactor));
-            for (auto &contour : subList)
-            {
-                for (auto &pt : contour)
-                {
+            for (auto &contour : subList) {
+                for (auto &pt : contour) {
                     pt += offset;
                 }
                 pointsList.push_back(contour);
@@ -338,167 +810,76 @@ void updateImage()
         if (split.hasLeft) scanAndMerge(split.leftPage);
         if (split.hasRight) scanAndMerge(split.rightPage);
 
-        // if nothing detected on both sides, fallback to whole image scan
-        if (pointsList.empty())
-        {
+        if (pointsList.empty()) {
             pointsList = docDetector.scanPoint(edged, resizedImage, true);
-        }
-        else
-        {
-            // use combined edged for display
+        } else {
             edged = combinedEdged;
         }
-    }
-    else
-    {
-        // no gutter: scan whole image as before
+    } else {
         pointsList = docDetector.scanPoint(edged, resizedImage, true);
     }
  
-     if (pointsList.size() == 0)
-     {
-         vector<cv::Point> points;
-         points.push_back(cv::Point(0, 0));
-         points.push_back(cv::Point(image.cols, 0));
-         points.push_back(cv::Point(image.cols, image.rows));
-         points.push_back(cv::Point(0, image.rows));
-         pointsList.push_back(points);
-     }
+    if (pointsList.size() == 0) {
+        vector<cv::Point> points;
+        points.push_back(cv::Point(0, 0));
+        points.push_back(cv::Point(image.cols, 0));
+        points.push_back(cv::Point(image.cols, image.rows));
+        points.push_back(cv::Point(0, image.rows));
+        pointsList.push_back(points);
+    }
 
-    // for (size_t i = 0; i < pointsList.size(); i++)
-    // {
-    //     vector<cv::Point> orderedPoints;
-    //     orderPoints(pointsList[i], orderedPoints);
-    // }
-
-    if (pointsList.size() > 0)
-    {
-        // cv::polylines(resizedImage, pointsList[0], true, Scalar(255, 0, 0), 2, 8);
-        // vector<cv::Point> orderedPoints;
-        // orderPoints(pointsList[0], orderedPoints);
+    if (pointsList.size() > 0) {
         warped = cropAndWarp(image, pointsList[0]);
-        if (whitepaper == 1)
-        {
+        
+        // Apply selected algorithm
+        if (uiManager.algorithmEnabled[UIManager::Algorithm::WHITEPAPER]) {
             string s;
             encode_json(whitepaperOptions, s, jsoncons::indenting::no_indent);
             detector::DocumentDetector::applyTransforms(warped, "whitepaper_" + s);
         }
-        if (whitepaper2 == 1)
-        {
+        else if (uiManager.algorithmEnabled[UIManager::Algorithm::WHITEPAPER2]) {
             string s;
             encode_json(whitepaperOptions, s, jsoncons::indenting::no_indent);
             detector::DocumentDetector::applyTransforms(warped, "whitepaper2_" + s);
         }
-        if (enhance == 1)
-        {
+        else if (uiManager.algorithmEnabled[UIManager::Algorithm::ENHANCE]) {
             detector::DocumentDetector::applyTransforms(warped, "enhance");
         }
-        // if (process1 == 1)
-        // {
-        //     // warped = quantizeImage(warped, 2);
-        //     processColors(warped);
-        //     // cv::stylization(warped, warped, 60, 0.07);
-        // }
-        if (colors == 1)
-        {
-            std::stringstream stream;
-            stream << "colors_" << colorsResizeThreshold << "_" << colorsFilterDistanceThreshold << "_" << distanceThreshold << "_" << (colorSpace - 1);
-            // detector::DocumentDetector::applyTransforms(warped, stream.str());
-            std::vector<std::pair<Vec3b, float>> colors = colorSimplificationTransform(warped, warped, false, colorsResizeThreshold, colorsFilterDistanceThreshold, distanceThreshold, paletteNbColors, (ColorSpace)(colorSpace), (ColorSpace)(paletteColorSpace));
-            for (int index = 0; index < colors.size(); ++index)
-            {
+        else if (uiManager.algorithmEnabled[UIManager::Algorithm::COLORS]) {
+            std::vector<std::pair<Vec3b, float>> colors = colorSimplificationTransform(
+                warped, warped, false, colorsResizeThreshold, colorsFilterDistanceThreshold, 
+                distanceThreshold, paletteNbColors, (ColorSpace)(colorSpace), (ColorSpace)(paletteColorSpace));
+            
+            for (int index = 0; index < colors.size(); ++index) {
                 auto color = colors.at(index).first;
                 auto rbgColor = ColorSpaceToBGR(color, (ColorSpace)(colorSpace));
-                std::stringstream stream;
-                stream << "\e[48;2;" << (int)rbgColor(2) << ";" << (int)rbgColor(1) << ";" << (int)rbgColor(0) << "m   \e[0m";
-                // ESC[48;2;⟨r⟩;⟨g⟩;⟨b⟩m
-                //     __android_log_print(ANDROID_LOG_INFO, "JS", "Color  Color %s Area: %f% %d\n", rgbSexString(HLStoBGR(color.first)).c_str(), 100.f * float(color.second) / n, colors.size());
-                cout << stream.str() << "Color: " << colors.size() << " - Hue: " << (int)color(0) << " - Lightness: " << (int)color(1) << " - Saturation: " << (int)color(2) << " " << BGRHexString(rbgColor) << " - Area: " << 100.f * (colors.at(index).second) << "%" << endl;
-                rectangle(warped, cv::Rect(index * 60, 0, 60, 60), Scalar(rbgColor(0), rbgColor(1), rbgColor(2)), -1);
+                rectangle(warped, cv::Rect(index * 60, 0, 60, 60), 
+                         Scalar(rbgColor(0), rbgColor(1), rbgColor(2)), -1);
             }
-
-            // processColors2(warped);
-            // cv::stylization(warped, warped, 60, 0.07);
         }
-    }
-    else
-    {
+    } else {
         warped = Mat();
     }
-    imshow("SourceImage", resizedImage);
-    imshow("Edges", edged);
-    if (!warped.empty())
-    {
-
-        // if (tesseractDemo)
-        // {
-        //     // warped = resizeImageToThreshold(warped, 500, 0);
-        //     // Mat toTest;
-        //     // preprocess_ocr(warped, toTest);
-        //     // cvtColor(warped, toTest, COLOR_BGR2GRAY);
-        //     // tesseractTest(warped, warped);
-        //     // detectTextOrientation(toTest);
-        //     // Mat res;
-        //     detector::DocumentOCR::DetectOptions options;
-        //     options.dataPath = "/home/mguillon/Downloads/tesseract/best";
-        //     options.language = "fra";
-        //     options.adapThresholdBlockSize = adapThresholdBlockSize;
-        //     options.adapThresholdC = adapThresholdC;
-        //     options.desseractDetectContours = desseractDetectContours;
-        //     options.tesseractDemo = tesseractDemo;
-        //     options.actualTesseractDetect = actualTesseractDetect;
-        //     options.textDetectDilate = textDetectDilate;
-        //     options.textDetect1 = textDetect1;
-        //     options.textDetect2 = textDetect2;
-        //     double t_r = (double)getTickCount();
-        //     std::optional<detector::DocumentOCR::OCRResult> result = detector::DocumentOCR::detectTextImpl(warped, warped, options, std::nullopt);
-        //     cout << "TIME_OCR = " << ((double)getTickCount() - t_r) * 1000 / getTickFrequency() << endl;
-        //     if (result != std::nullopt)
-        //     {
-        //         float scale_img = 600.f / warped.rows;
-        //         float scale_font = (float)(2 - scale_img) / 1.4f;
-        //         auto ocrResult = *std::move(result);
-        //         for (int j = 0; j < ocrResult.blocks.size(); j++)
-        //         {
-        //             detector::DocumentOCR::OCRData data = ocrResult.blocks[j];
-        //             rectangle(warped, data.box.tl(), data.box.br(), Scalar(255, 0, 255), 3);
-        //             Size word_size = getTextSize(data.text, FONT_HERSHEY_SIMPLEX, (double)scale_font, (int)(3 * scale_font), NULL);
-        //             rectangle(warped, data.box.tl() - Point(3, word_size.height + 3), data.box.tl() + Point(word_size.width, 0), Scalar(255, 0, 255), -1);
-        //             putText(warped, data.text, data.box.tl() - Point(1, 1), FONT_HERSHEY_SIMPLEX, scale_font, Scalar(255, 255, 255), (int)(3 * scale_font));
-        //         }
-        //     }
-        //     // detect_text(warped, warped);
-        // }
-
-        imshow("Warped", warped);
-    }
-    else
-    {
-        // destroyWindow("Warped");
-        // namedWindow("Warped", WINDOW_KEEPRATIO);
-        // moveWindow("Warped", 900, 100);
-    }
+    
+    renderUI();
 }
+
 void updateSourceImage()
 {
     image = imread(images[imageIndex]);
-    docDetector.image = image;
-    resizedImage = docDetector.resizeImageMax();
-    imshow("SourceImage", resizedImage);
     updateImage();
 }
+
 void on_trackbar(int, void *)
 {
-    // if (adapThresholdBlockSize > 0 && adapThresholdBlockSize % 2 == 0)
-    // {
-    //     adapThresholdBlockSize = adapThresholdBlockSize + 1;
-    // }
     updateImage();
 }
+
 void on_double_trackbar(double)
 {
     updateImage();
 }
+
 void on_trackbar_image(int, void *)
 {
     updateSourceImage();
@@ -506,123 +887,252 @@ void on_trackbar_image(int, void *)
 
 JSONCONS_N_MEMBER_TRAITS(WhitePaperTransformOptions, 0, csBlackPer, csWhitePer, gaussKSize, gaussSigma, gammaValue, cbBlackPer, cbWhitePer, dogKSize, dogSigma2);
 
+bool settingsVisible = true;
+
+void createSettingsWindow() {
+    // destroyWindow("Settings");
+    namedWindow("Settings", WINDOW_NORMAL | WINDOW_KEEPRATIO);
+    resizeWindow("Settings", 350, 900);
+    moveWindow("Settings", 50, 50);
+    
+    // === NAVIGATION ===
+    createTrackbar("Image Index", "Settings", &imageIndex, images.size() - 1, on_trackbar_image);
+    
+    // === DETECTION SETTINGS ===
+    createTrackbar("--- DETECTION ---", "Settings", nullptr, 1, nullptr);
+    createTrackbar("Use Channel", "Settings", &useChannel, 3, on_trackbar);
+    createTrackbar("Canny Factor", "Settings", &cannyFactor, 400, on_trackbar);
+    createTrackbar("Morphology", "Settings", &morphologyAnchorSize, 20, on_trackbar);
+    createTrackbar("Dilate", "Settings", &dilateAnchorSize, 20, on_trackbar);
+    createTrackbar("Thresh", "Settings", &thresh, 300, on_trackbar);
+    createTrackbar("Thresh Max", "Settings", &threshMax, 300, on_trackbar);
+    createTrackbar("Contours Eps", "Settings", &contoursApproxEpsilonFactor, 100, on_trackbar);
+    
+    // === PREPROCESSING ===
+    createTrackbar("--- PREPROCESS ---", "Settings", nullptr, 1, nullptr);
+    createTrackbar("Bilateral", "Settings", &bilateralFilterValue, 200, on_trackbar);
+    createTrackbar("Median Blur", "Settings", &medianBlurValue, 200, on_trackbar);
+    
+    // === HOUGH LINES ===
+    createTrackbar("--- HOUGH LINES ---", "Settings", nullptr, 1, nullptr);
+    createTrackbar("Threshold", "Settings", &houghLinesThreshold, 500, on_trackbar);
+    createTrackbar("Min Length", "Settings", &houghLinesMinLineLength, 500, on_trackbar);
+    createTrackbar("Max Gap", "Settings", &houghLinesMaxLineGap, 500, on_trackbar);
+    
+    // === WHITEPAPER OPTIONS ===
+    createTrackbar("--- WHITEPAPER ---", "Settings", nullptr, 1, nullptr);
+    createTrackbar("dogKSize", "Settings", &whitepaperOptions.dogKSize, 100, on_trackbar);
+    createTrackbar("dogSigma1", "Settings", &whitepaperOptions.dogSigma1, 200, on_trackbar);
+    createTrackbar("dogSigma2", "Settings", &whitepaperOptions.dogSigma2, 100, on_trackbar);
+    createTrackbar("csBlackPer", "Settings", &whitepaperOptions.csBlackPer, 100, on_trackbar);
+    // createTrackbar("csWhitePer", "Settings", &whitepaperOptions.csWhitePer, 100, on_trackbar);
+    createTrackbar("gaussKSize", "Settings", &whitepaperOptions.gaussKSize, 100, on_trackbar);
+    // createTrackbar("gaussSigma", "Settings", &whitepaperOptions.gaussSigma, 100, on_trackbar);
+    // createTrackbar("gammaValue", "Settings", &whitepaperOptions.gammaValue, 100, on_trackbar);
+    
+    // === COLORS OPTIONS ===
+    createTrackbar("--- COLORS ---", "Settings", nullptr, 1, nullptr);
+    createTrackbar("Resize Thresh", "Settings", &colorsResizeThreshold, 500, on_trackbar);
+    createTrackbar("Filter Dist", "Settings", &colorsFilterDistanceThreshold, 100, on_trackbar);
+    createTrackbar("Distance", "Settings", &distanceThreshold, 100, on_trackbar);
+    createTrackbar("Nb Colors", "Settings", &paletteNbColors, 20, on_trackbar);
+    createTrackbar("Color Space", "Settings", &colorSpace, 5, on_trackbar);
+    createTrackbar("Palette Space", "Settings", &paletteColorSpace, 5, on_trackbar);
+}
+
+void handleKeyPress(int key) {
+    switch(key) {
+        // View modes
+        case '1':
+            uiManager.currentView = UIManager::ViewMode::SOURCE;
+            renderUI();
+            break;
+        case '2':
+            uiManager.currentView = UIManager::ViewMode::EDGES;
+            renderUI();
+            break;
+        case '3':
+            uiManager.currentView = UIManager::ViewMode::WARPED;
+            renderUI();
+            break;
+        case '4':
+            uiManager.currentView = UIManager::ViewMode::COMPARE;
+            renderUI();
+            break;
+            
+        // Algorithms
+        case 'q':
+        case 'Q':
+            uiManager.toggleAlgorithm(UIManager::Algorithm::NONE);
+            updateImage();
+            break;
+        case 'w':
+        case 'W':
+            uiManager.toggleAlgorithm(UIManager::Algorithm::WHITEPAPER);
+            updateImage();
+            break;
+        case 'e':
+        case 'E':
+            uiManager.toggleAlgorithm(UIManager::Algorithm::WHITEPAPER2);
+            updateImage();
+            break;
+        case 'r':
+        case 'R':
+            uiManager.toggleAlgorithm(UIManager::Algorithm::WHITEPAPER_FAST);
+            updateImage();
+            break;
+        case 't':
+        case 'T':
+            uiManager.toggleAlgorithm(UIManager::Algorithm::ENHANCE);
+            updateImage();
+            break;
+        case 'y':
+        case 'Y':
+            uiManager.toggleAlgorithm(UIManager::Algorithm::COLORS);
+            updateImage();
+            break;
+            
+        // Navigation
+        case 'n':
+        case 'N':
+            imageIndex = (imageIndex + 1) % images.size();
+            setTrackbarPos("Image Index", "Settings", imageIndex);
+            updateSourceImage();
+            break;
+        case 'p':
+        case 'P':
+            imageIndex = (imageIndex - 1 + images.size()) % images.size();
+            setTrackbarPos("Image Index", "Settings", imageIndex);
+            updateSourceImage();
+            break;
+            
+        // Settings toggle
+        case ' ':
+            settingsVisible = !settingsVisible;
+            if (settingsVisible) {
+                createSettingsWindow();
+            } else {
+                destroyWindow("Settings");
+            }
+            break;
+    }
+}
+
 int main(int argc, char **argv)
 {
-    // with single image
-    if (argc < 2)
-    {
-        cout << "Usage: ./scanner [test_images_dir_path]\n";
+    // Enable high DPI scaling BEFORE creating QApplication
+    QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+    
+    // Initialize Qt application for proper DPI handling
+    QApplication app(argc, argv);
+
+    printf("OpenCV: %s\n", cv::getBuildInformation().c_str());
+    
+    if (argc < 2) {
+        cout << "Usage: ./scanner [test_images_dir_path] [optional: start_image_name]\n";
         return 1;
     }
-    printf("OpenCV: %s", cv::getBuildInformation().c_str());
+    
     const char *dirPath = argv[1];
-    const char *startImage = argv[2];
+    const char *startImage = argc > 2 ? argv[2] : nullptr;
 
     setImagesFromFolder(dirPath);
-    if (startImage)
-    {
-        auto ret = std::find_if(images.begin(), images.end(), [startImage](string filePath)
-                                { return filePath.find(startImage) != std::string::npos; });
-        if (ret != images.end())
-        {
+    if (images.empty()) {
+        cerr << "No images found in directory: " << dirPath << endl;
+        return 1;
+    }
+    
+    if (startImage) {
+        auto ret = std::find_if(images.begin(), images.end(), [startImage](string filePath) {
+            return filePath.find(startImage) != std::string::npos;
+        });
+        if (ret != images.end()) {
             imageIndex = ret - images.begin();
         }
     }
-    namedWindow("SourceImage", WINDOW_KEEPRATIO);
-    resizeWindow("SourceImage", 600, 400);
-    moveWindow("SourceImage", 450, 500);
-    namedWindow("Options", 0);
-    resizeWindow("Options", 450, 400);
-    moveWindow("Options", 0, 0);
-    // namedWindow("HoughLinesP", WINDOW_KEEPRATIO);
-    // resizeWindow("HoughLinesP", 400, 300);
-    // moveWindow("HoughLinesP", 1200, 600);
-    namedWindow("Edges", WINDOW_KEEPRATIO);
-    resizeWindow("Edges", 600, 400);
-    moveWindow("Edges", 450, 0);
-
-    namedWindow("WarpedOptions", WINDOW_KEEPRATIO);
-    moveWindow("WarpedOptions", 1500, 0);
-    resizeWindow("WarpedOptions", 400, 600);
-
-    namedWindow("Warped", WINDOW_KEEPRATIO);
-    moveWindow("Warped", 1100, 0);
-    resizeWindow("Warped", 400, 600);
-
-    // namedWindow("Detect", WINDOW_KEEPRATIO);
-    // moveWindow("Detect", 1400, 100);
-    // resizeWindow("Detect", 600, 600);
-    createTrackbar("image:", "Options", &imageIndex, std::size(images) - 1, on_trackbar_image);
-    createTrackbar("useChannel:", "Options", &useChannel, 3, on_trackbar);
-    createTrackbar("bilateralFilter:", "Options", &bilateralFilterValue, 200, on_trackbar);
-    // createTrackbar("gaussianBlur:", "Options", &gaussianBlur, 200, on_trackbar);
-    createTrackbar("medianBlurValue:", "Options", &medianBlurValue, 200, on_trackbar);
-    createTrackbar("morphologyAnchorSize:", "Options", &morphologyAnchorSize, 20, on_trackbar);
-    createTrackbar("cannyFactor:", "Options", &cannyFactor, 400, on_trackbar);
-    // createTrackbar("cannyThreshold1:", "Options", &cannyThreshold1, 255, on_trackbar);
-    // createTrackbar("cannyThreshold2:", "Options", &cannyThreshold2, 255, on_trackbar);
-    // createTrackbar("dilateAnchorSizeBefore:", "Options", &dilateAnchorSizeBefore, 20, on_trackbar);
-    createTrackbar("dilateAnchorSize:", "Options", &dilateAnchorSize, 20, on_trackbar);
-    // createTrackbar("gammaCorrection:", "Options", &gammaCorrection, 200, on_trackbar);
-    createTrackbar("thresh:", "Options", &thresh, 300, on_trackbar);
-    createTrackbar("threshMax:", "Options", &threshMax, 300, on_trackbar);
-    createTrackbar("houghLinesThreshold:", "Options", &houghLinesThreshold, 500, on_trackbar);
-    createTrackbar("houghLinesMinLineLength:", "Options", &houghLinesMinLineLength, 500, on_trackbar);
-    createTrackbar("houghLinesMaxLineGap:", "Options", &houghLinesMaxLineGap, 500, on_trackbar);
-
-    // createTrackbar("actualTesseractDetect:", "SourceImage", &actualTesseractDetect, 1, on_trackbar);
-    // createTrackbar("textDetect1:", "SourceImage", &textDetect1, 100, on_trackbar);
-    // createTrackbar("textDetect2:", "SourceImage", &textDetect2, 100, on_trackbar);
-    // createTrackbar("textDetectDilate:", "SourceImage", &textDetectDilate, 100, on_trackbar);
-    // createTrackbar("desseractDetectContours:", "SourceImage", &desseractDetectContours, 1, on_trackbar);
-    // createTrackbar("negate:", "Options", &shouldNegate, 1, on_trackbar);
-    createTrackbar("contoursApproxEpsilonFactor:", "Options", &contoursApproxEpsilonFactor, 100, on_trackbar);
-
-    createTrackbar("enhance details:", "Warped", &enhance, 1, on_trackbar);
-
-    // Whitepaper
-    createTrackbar("whitepaper:", "WarpedOptions", &whitepaper, 1, on_trackbar);
-    createTrackbar("whitepaper2:", "WarpedOptions", &whitepaper2, 1, on_trackbar);
-    createTrackbar("dogSigma1:", "WarpedOptions", &whitepaperOptions.dogSigma1, 200, on_trackbar);
-    createTrackbar("dogSigma2:", "WarpedOptions", &whitepaperOptions.dogSigma2, 100, on_trackbar);
-    createTrackbar("dogKSize:", "WarpedOptions", &whitepaperOptions.dogKSize, 100, on_trackbar);
-    createTrackbar("csBlackPer:", "WarpedOptions", &whitepaperOptions.csBlackPer, 100, on_trackbar);
-    DoubleTrack().setup("csWhitePer", "WarpedOptions", &whitepaperOptions.csWhitePer, 100, on_double_trackbar);
-    createTrackbar("gaussKSize:", "WarpedOptions", &whitepaperOptions.gaussKSize, 100, on_trackbar);
-    DoubleTrack().setup("gaussSigma", "WarpedOptions", &whitepaperOptions.gaussSigma, 100, on_double_trackbar);
-    DoubleTrack().setup("gammaValue", "WarpedOptions", &whitepaperOptions.gammaValue, 100, on_double_trackbar);
-    // createTrackbar("gaussSigma:", "Warped", &whitepaperOptions.gaussSigma, 100, on_trackbar);
-    // createTrackbar("gammaValue:", "Warped", &whitepaperOptions.gammaValue, 100, on_trackbar);
-
-    // Color
-    createTrackbar("colors:", "Warped", &colors, 1, on_trackbar);
-    // createTrackbar("colorsResizeThreshold:", "Warped", &colorsResizeThreshold, 400, on_trackbar);
-    // createTrackbar("colorsFilterDistanceThreshold:", "Warped", &colorsFilterDistanceThreshold, 180, on_trackbar);
-    // createTrackbar("distanceThreshold:", "Warped", &distanceThreshold, 180, on_trackbar);
-    // createTrackbar("colorSpace:", "Warped", &colorSpace, 3, on_trackbar);
-    // createTrackbar("paletteColorSpace:", "Warped", &paletteColorSpace, 3, on_trackbar);
-    // createTrackbar("paletteNbColors:", "Warped", &paletteNbColors, 8, on_trackbar);
-    // createTrackbar("adapThresholdBlockSize:", "Options", &adapThresholdBlockSize, 500, on_trackbar);
-    // createTrackbar("adapThresholdC:", "Options", &adapThresholdC, 500, on_trackbar);
+    
+    // Create main window
+    namedWindow("Document Scanner Test", WINDOW_NORMAL | WINDOW_KEEPRATIO | WINDOW_GUI_EXPANDED);
+    resizeWindow("Document Scanner Test", 1400, 900);
+    
+    // Get DPI info
+    if (QApplication::primaryScreen()) {
+        float dpi = QApplication::primaryScreen()->logicalDotsPerInch();
+        float scale = QApplication::primaryScreen()->devicePixelRatio();
+        cout << "Display DPI: " << dpi << ", Scale Factor: " << scale << endl;
+    }
+    
+    // Create settings window
+    createSettingsWindow();
+    
     canUpdateImage = true;
     image = imread(images[imageIndex]);
     updateImage();
 
-    // createTrackbar("dogKSize:", "SourceImage", &dogKSize, 30, on_trackbar);
-    // createTrackbar("dogSigma1:", "SourceImage", &dogSigma1, 200, on_trackbar);
-    // createTrackbar("dogSigma2:", "SourceImage", &dogSigma2, 200, on_trackbar);
-    int k;
-    while (true)
-    {
-        k = waitKey(0);
-        if (k == 27)
-        {
-            break;
-        }
-    }
+    cout << "\n=== Document Scanner Test Interface ===\n";
+    cout << "View Modes:\n";
+    cout << "  [1] Source Image\n";
+    cout << "  [2] Edge Detection\n";
+    cout << "  [3] Warped Result\n";
+    cout << "  [4] Side-by-Side Compare\n\n";
+    cout << "Algorithms:\n";
+    cout << "  [Q] None\n";
+    cout << "  [W] Whitepaper\n";
+    cout << "  [E] Whitepaper 2\n";
+    cout << "  [R] Whitepaper Fast\n";
+    cout << "  [T] Enhance\n";
+    cout << "  [Y] Colors\n\n";
+    cout << "Navigation:\n";
+    cout << "  [N] Next Image\n";
+    cout << "  [P] Previous Image\n";
+    cout << "  [Space] Toggle Settings\n";
+    cout << "  [ESC] Exit\n\n";
 
-    // edged.release();
-    // warped.release();
+    // Track window for resize detection
+    QWidget* mainWindow = nullptr;
+    static int lastWidth = 0, lastHeight = 0;
+    
+    // Timer to check for window resize
+    QTimer resizeTimer;
+    resizeTimer.setInterval(100);
+    QObject::connect(&resizeTimer, &QTimer::timeout, [&]() {
+        if (!mainWindow) {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                if (widget->windowTitle() == "Document Scanner Test") {
+                    mainWindow = widget;
+                    break;
+                }
+            }
+        }
+        
+        if (mainWindow) {
+            int currentWidth = mainWindow->width();
+            int currentHeight = mainWindow->height();
+            
+            if (currentWidth != lastWidth || currentHeight != lastHeight) {
+                lastWidth = currentWidth;
+                lastHeight = currentHeight;
+                if (lastWidth > 0 && lastHeight > 0) {
+                    renderUI();
+                }
+            }
+        }
+    });
+    resizeTimer.start();
+
+    int k;
+    while (true) {
+        k = waitKey(30);
+        if (k == 27) { // ESC
+            break;
+        } else if (k != -1) {
+            handleKeyPress(k);
+        }
+        
+        // Process Qt events to handle window operations
+        QApplication::processEvents();
+    }
 
     return 0;
 }
