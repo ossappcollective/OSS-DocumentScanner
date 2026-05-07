@@ -192,7 +192,7 @@ export async function request<T = any>(requestParams: HttpRequestOptions, retry 
     const requestStartTime = Date.now();
     if (__DEV__) {
         // DEV_LOG && console.log(requestParams.url, JSON.stringify(requestParams));
-        // logRequestAsCurl(requestParams.url, requestParams as any);
+        logRequestAsCurl(requestParams.url, requestParams as any);
     }
     try {
         const response = await https.request<T>(requestParams);
@@ -239,7 +239,7 @@ export async function handleRequestResponseError<U = any>(response: https.HttpsR
             // if (statusCode === 401 && jsonReturn.error === 'invalid_grant') {
             //     return this.handleRequestRetry(requestParams, retry);
             // }
-            const error = jsonReturn.error_description || jsonReturn.error || jsonReturn;
+            const error = jsonReturn.error_description || jsonReturn.error || JSON.stringify(jsonReturn);
             throw new HTTPError({
                 statusCode: error.code || statusCode,
                 message: error.error_description || error.form || error.message || error.error || error,

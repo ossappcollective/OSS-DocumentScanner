@@ -140,6 +140,7 @@ export interface DocumentExtra {
     color?: string;
     [k: string]:
         | string
+        | number
         | boolean
         | {
               type: string;
@@ -555,6 +556,7 @@ export class OCRDocument extends Observable implements Document {
         //     // TODO: fix why do we need to clear the whole cache? wrong cache key?
         //     getImagePipeline().clearCaches();
         // } else {
+        // eslint-disable-next-line @typescript-eslint/await-thenable
         await getImagePipeline().evictFromCache(croppedImagePath);
         // }
         await this.updatePage(

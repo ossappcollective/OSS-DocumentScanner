@@ -11,7 +11,8 @@ export enum SyncTypes {
     gdrive_pdf = 'gdrive_pdf',
     onedrive_data = 'onedrive_data',
     onedrive_image = 'onedrive_image',
-    onedrive_pdf = 'onedrive_pdf'
+    onedrive_pdf = 'onedrive_pdf',
+    paperless_pdf = 'paperless_pdf'
 }
 
 export type SYNC_TYPES = keyof typeof SyncTypes;
@@ -26,7 +27,8 @@ export const SERVICES_SYNC_MASK: { [key in SYNC_TYPES]: number } = {
     gdrive_pdf: 1 << 9,
     onedrive_data: 1 << 10,
     onedrive_image: 1 << 11,
-    onedrive_pdf: 1 << 12
+    onedrive_pdf: 1 << 12,
+    paperless_pdf: 1 << 13
 };
 
 export const SERVICES_SYNC_ICONS_COLORS: { [key: string]: { icon: string; color?: string; fontFamily?: string } } = {
@@ -46,7 +48,8 @@ export const SERVICES_SYNC_COLOR: { [key in SYNC_TYPES]: string } = {
     gdrive_pdf: '#FBBC05',
     onedrive_data: '#0078D4',
     onedrive_image: '#50E6FF',
-    onedrive_pdf: '#00BCF2'
+    onedrive_pdf: '#00BCF2',
+    paperless_pdf: '#17541F'
 };
 
 export enum SyncType {

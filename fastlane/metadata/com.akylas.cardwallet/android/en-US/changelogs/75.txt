@@ -1,0 +1,9 @@
+Features:
+-  Paperless-ngx PDF sync provider
+
+Bug fixes:
+- error message on document update from sync service
+- missing sync settings sections for PDF (OCR settings and PDF settings0
+- syncing PDF would not overwrite existing PDF
+- faster PDF sync when OCR is enabled
+- brightness/contrast not working while transforming multiple pages

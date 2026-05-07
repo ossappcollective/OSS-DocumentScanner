@@ -23,6 +23,7 @@ import { SYNC_TYPES, SyncType, getRemoteDeleteDocumentSettingsKey } from '~/serv
 import { WebdavDataSyncService } from '~/services/sync/webdav/WebdavDataSyncService';
 import { WebdavImageSyncService } from '~/services/sync/webdav/WebdavImageSyncService';
 import { WebdavPDFSyncService } from '~/services/sync/webdav/WebdavPDFSyncService';
+import { PaperlessNgxPDFSyncService } from '~/services/sync/paperless/PaperlessNgxPDFSyncService';
 import {
     DOCUMENT_DATA_FILENAME,
     EVENT_DOCUMENT_ADDED,
@@ -57,7 +58,8 @@ export const SERVICES_TYPE_MAP: { [key in SYNC_TYPES]: typeof BaseSyncService } 
     gdrive_pdf: GoogleDrivePDFSyncService,
     onedrive_data: OneDriveDataSyncService,
     onedrive_image: OneDriveImageSyncService,
-    onedrive_pdf: OneDrivePDFSyncService
+    onedrive_pdf: OneDrivePDFSyncService,
+    paperless_pdf: PaperlessNgxPDFSyncService
 };
 
 const TAG = '[SyncWorker]';
