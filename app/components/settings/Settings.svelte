@@ -1409,17 +1409,18 @@
                                 value: selected
                             };
                         });
+                        const { full_description, title, ...others } = item;
                         const result = await showAlertOptionSelect(
                             {
                                 height: Math.min(item.values.length * 56, ALERT_OPTION_MAX_HEIGHT),
                                 rowHeight: item.autoSizeListItem ? undefined : 56,
-                                ...item,
+                                ...others,
                                 selectedIndex,
                                 options
                             },
                             {
-                                title: item.title,
-                                message: item.full_description
+                                title,
+                                message: full_description
                             }
                         );
                         if (result?.data !== undefined) {
