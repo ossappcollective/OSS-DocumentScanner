@@ -37,7 +37,7 @@
   },
   "link.item.label.GitHub Issues": {
     "message": "Signaler un Problème (GitHub)",
-    "description": "The label of footer link with label=GitHub Issues linking to https://github.com/ossdocumentscanner/OSS-DocumentScanner/issues"
+    "description": "The label of footer link with label=GitHub Issues linking to https://github.com/ossappscollective/OSS-DocumentScanner/issues"
   },
   "link.item.label.Weblate Translations": {
     "message": "Traductions Weblate",
@@ -49,7 +49,7 @@
   },
   "link.item.label.GitHub Releases": {
     "message": "Versions GitHub",
-    "description": "The label of footer link with label=GitHub Releases linking to https://github.com/ossdocumentscanner/OSS-DocumentScanner/releases"
+    "description": "The label of footer link with label=GitHub Releases linking to https://github.com/ossappscollective/OSS-DocumentScanner/releases"
   },
   "link.item.label.Google Play (Scanner)": {
     "message": "Google Play (Scanner)",

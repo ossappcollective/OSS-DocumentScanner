@@ -17,7 +17,7 @@ Vous pouvez installer OSS Document Scanner sur Android via :
 
 - **Google Play Store** : [Télécharger depuis Play Store](https://play.google.com/store/apps/details?id=com.akylas.documentscanner)
 - **IzzyOnDroid** : [Télécharger depuis IzzyOnDroid](https://apt.izzysoft.de/packages/com.akylas.documentscanner)
-- **Versions GitHub** : [Télécharger l'APK depuis GitHub](https://github.com/ossdocumentscanner/OSS-DocumentScanner/releases)
+- **Versions GitHub** : [Télécharger l'APK depuis GitHub](https://github.com/ossappscollective/OSS-DocumentScanner/releases)
 - **Obtainium** : Ajouter l'application pour les mises à jour automatiques
 
 ### iOS
@@ -63,6 +63,6 @@ Au premier lancement, l'application demandera les permissions suivantes :
 
 ## Obtenir de l'Aide
 
-- **Problèmes** : [Signaler des bugs sur GitHub](https://github.com/ossdocumentscanner/OSS-DocumentScanner/issues)
+- **Problèmes** : [Signaler des bugs sur GitHub](https://github.com/ossappscollective/OSS-DocumentScanner/issues)
 - **Traductions** : [Aidez à traduire sur Weblate](https://hosted.weblate.org/engage/oss-document-scanner/)
 - **FAQ** : Consultez notre [Foire Aux Questions](/faq)

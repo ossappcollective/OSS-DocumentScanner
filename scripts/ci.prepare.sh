@@ -31,5 +31,5 @@ echo "VERSION   = ${VERSION}"
 echo "FLAVOR    = ${FLAVOR}"
 echo "FLAVOR    = $(dirname $0)"
 
-wget https://github.com/ossdocumentscanner/OSS-DocumentScanner/releases/download/dev_resources/${PLATFORM}.zip
+wget https://github.com/ossappscollective/OSS-DocumentScanner/releases/download/dev_resources/${PLATFORM}.zip
 unzip -o ${PLATFORM}.zip

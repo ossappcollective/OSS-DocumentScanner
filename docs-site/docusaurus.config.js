@@ -87,7 +87,7 @@ const config = {
                     sidebarPath: './sidebars.js',
                     // Please change this to your repo.
                     // Remove this to remove the "edit this page" links.
-                    editUrl: 'https://github.com/ossdocumentscanner/OSS-DocumentScanner/tree/main/docs-site/'
+                    editUrl: 'https://github.com/ossappscollective/OSS-DocumentScanner/tree/main/docs-site/'
                 },
                 blog: false,
                 theme: {
@@ -166,7 +166,7 @@ const config = {
                         position: 'right'
                     },
                     {
-                        href: 'https://github.com/ossdocumentscanner/OSS-DocumentScanner',
+                        href: 'https://github.com/ossappscollective/OSS-DocumentScanner',
                         label: 'GitHub',
                         position: 'right'
                     }
@@ -214,7 +214,7 @@ const config = {
                         items: [
                             {
                                 label: 'GitHub Issues',
-                                href: 'https://github.com/ossdocumentscanner/OSS-DocumentScanner/issues'
+                                href: 'https://github.com/ossappscollective/OSS-DocumentScanner/issues'
                             },
                             {
                                 label: 'Weblate Translations',
@@ -231,7 +231,7 @@ const config = {
                         items: [
                             {
                                 label: 'GitHub Releases',
-                                href: 'https://github.com/ossdocumentscanner/OSS-DocumentScanner/releases'
+                                href: 'https://github.com/ossappscollective/OSS-DocumentScanner/releases'
                             },
                             {
                                 label: 'Google Play (Scanner)',

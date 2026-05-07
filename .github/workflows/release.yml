@@ -95,7 +95,7 @@ jobs:
   release-documentscanner-ios:
     permissions:
       contents: write
-    uses: ossappcollective/app-tools/.github/workflows/release_ios.yml@main
+    uses: ossappscollective/app-tools/.github/workflows/release_ios.yml@main
     if: github.event.inputs.ios == 'true' && github.event.inputs.documentscanner == 'true'
     with:
       flavor: documentscanner
@@ -108,7 +108,7 @@ jobs:
   release-cardwallet-ios:
     permissions:
       contents: write
-    uses: ossappcollective/app-tools/.github/workflows/release_ios.yml@main
+    uses: ossappscollective/app-tools/.github/workflows/release_ios.yml@main
     if: github.event.inputs.ios == 'true' && github.event.inputs.cardwallet == 'true'
     with:
       flavor: cardwallet

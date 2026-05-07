@@ -16,14 +16,14 @@ function HomepageHeader() {
                 </Heading>
                 <p className="hero__subtitle">Scan documents and manage cards - privacy-focused, free, and open source</p>
                 <div className={styles.badges}>
-                    <a href="https://github.com/ossdocumentscanner/OSS-DocumentScanner/stargazers">
-                        <img src="https://img.shields.io/github/stars/ossdocumentscanner/OSS-DocumentScanner?style=flat" alt="GitHub stars" />
+                    <a href="https://github.com/ossappscollective/OSS-DocumentScanner/stargazers">
+                        <img src="https://img.shields.io/github/stars/ossappscollective/OSS-DocumentScanner?style=flat" alt="GitHub stars" />
                     </a>
-                    <a href="https://github.com/ossdocumentscanner/OSS-DocumentScanner/blob/master/COPYING">
-                        <img src="https://img.shields.io/github/license/ossdocumentscanner/OSS-DocumentScanner" alt="License" />
+                    <a href="https://github.com/ossappscollective/OSS-DocumentScanner/blob/master/COPYING">
+                        <img src="https://img.shields.io/github/license/ossappscollective/OSS-DocumentScanner" alt="License" />
                     </a>
-                    <a href="https://github.com/ossdocumentscanner/OSS-DocumentScanner/releases/">
-                        <img src="https://img.shields.io/github/downloads/ossdocumentscanner/OSS-DocumentScanner/total.svg" alt="Downloads" />
+                    <a href="https://github.com/ossappscollective/OSS-DocumentScanner/releases/">
+                        <img src="https://img.shields.io/github/downloads/ossappscollective/OSS-DocumentScanner/total.svg" alt="Downloads" />
                     </a>
                     <a href="https://hosted.weblate.org/engage/oss-document-scanner/">
                         <img src="https://hosted.weblate.org/widgets/oss-document-scanner/-/svg-badge.svg" alt="Translation status" />
@@ -40,7 +40,7 @@ function AppShowcase() {
             name: 'OSS Document Scanner',
             description: 'Scan, edit, and export documents with automatic edge detection and perspective correction.',
             featureImage: useBaseUrl('/img/apps/documentscanner-feature.png'),
-            github: 'https://github.com/ossdocumentscanner/OSS-DocumentScanner/releases?q=documentscanner&expanded=true',
+            github: 'https://github.com/ossappscollective/OSS-DocumentScanner/releases?q=documentscanner&expanded=true',
             playStore: 'https://play.google.com/store/apps/details?id=com.akylas.documentscanner',
             appStore: 'https://apps.apple.com/us/app/oss-document-scanner/id6472918564',
             izzyOnDroid: 'https://apt.izzysoft.de/packages/com.akylas.documentscanner',
@@ -53,7 +53,7 @@ function AppShowcase() {
             name: 'OSS CardWallet',
             description: 'Store and manage loyalty cards, tickets, and barcodes securely on your device.',
             featureImage: useBaseUrl('/img/apps/cardwallet-feature.png'),
-            github: 'https://github.com/ossdocumentscanner/OSS-DocumentScanner/releases?q=cardwallet&expanded=true',
+            github: 'https://github.com/ossappscollective/OSS-DocumentScanner/releases?q=cardwallet&expanded=true',
             playStore: 'https://play.google.com/store/apps/details?id=com.akylas.cardwallet',
             appStore: 'https://apps.apple.com/app/oss-cardwallet/id6504414362',
             izzyOnDroid: 'https://apt.izzysoft.de/packages/com.akylas.cardwallet',
@@ -90,7 +90,7 @@ function AppShowcase() {
                                         <img src="https://izzyondroid.org/assets/static/IzzyOnDroidButtonGreyBorder_nofont.png" alt="Get it on IzzyOnDroid" height="50" />
                                     </a>
                                     <a href={app.github} className={styles.storeButton} target="_blank">
-                                        <img src="https://raw.githubusercontent.com/ossdocumentscanner/OSS-DocumentScanner/main/graphics/badge_github.png" alt="Get it on Github" height="50" />
+                                        <img src="https://raw.githubusercontent.com/ossappscollective/OSS-DocumentScanner/main/graphics/badge_github.png" alt="Get it on Github" height="50" />
                                     </a>
                                     <a href={app.obtainium} className={styles.storeButton} target="_blank">
                                         <img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="50" />
@@ -170,7 +170,7 @@ function DonationBanner() {
                         <a href="https://github.com/sponsors/farfromrefug" className="button button--primary button--lg">
                             💝 Sponsor on GitHub
                         </a>
-                        <a href="https://www.paypal.com/paypalme/nicoschmidt" className="button button--secondary button--lg">
+                        <a href="https://www.paypal.com/paypalme/farfromfefug" className="button button--secondary button--lg">
                             💳 Donate via PayPal
                         </a>
                     </div>
@@ -221,7 +221,7 @@ function ContributeSection() {
                     <Link className="button button--primary button--lg" to="/contributing">
                         📖 Contribution Guide
                     </Link>
-                    <a className="button button--outline button--primary button--lg" href="https://github.com/ossdocumentscanner/OSS-DocumentScanner/tree/main/docs-site">
+                    <a className="button button--outline button--primary button--lg" href="https://github.com/ossappscollective/OSS-DocumentScanner/tree/main/docs-site">
                         ✏️ Edit on GitHub
                     </a>
                 </div>

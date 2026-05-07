@@ -36,9 +36,9 @@ Les deux applications partagent des fonctionnalités communes comme la synchroni
 
 ### Où puis-je obtenir de l'aide ?
 
-- **GitHub Issues** : [Signaler des bugs ou demander des fonctionnalités](https://github.com/ossdocumentscanner/OSS-DocumentScanner/issues)
+- **GitHub Issues** : [Signaler des bugs ou demander des fonctionnalités](https://github.com/ossappscollective/OSS-DocumentScanner/issues)
 - **Cette Documentation** : Parcourez les guides et tutoriels
-- **Code Source** : Consultez le [code open source](https://github.com/ossdocumentscanner/OSS-DocumentScanner)
+- **Code Source** : Consultez le [code open source](https://github.com/ossappscollective/OSS-DocumentScanner)
 
 ### Comment puis-je contribuer ?
 
@@ -249,7 +249,7 @@ OSS Document Scanner est construit avec :
 
 ### Où se trouve le code source ?
 
-Répertoires clés dans le [dépôt GitHub](https://github.com/ossdocumentscanner/OSS-DocumentScanner) :
+Répertoires clés dans le [dépôt GitHub](https://github.com/ossappscollective/OSS-DocumentScanner) :
 
 | Répertoire | Contenu |
 |------------|---------|
@@ -262,7 +262,7 @@ Répertoires clés dans le [dépôt GitHub](https://github.com/ossdocumentscanne
 
 ### Comment puis-je compiler depuis les sources ?
 
-Voir la [section Configuration de Build](https://github.com/ossdocumentscanner/OSS-DocumentScanner#building-setup) dans le README principal.
+Voir la [section Configuration de Build](https://github.com/ossappscollective/OSS-DocumentScanner#building-setup) dans le README principal.
 
 ## Intégration de Captures d'Écran Maestro
 
@@ -309,6 +309,6 @@ Gardez ces noms de fichiers exacts pour que les captures générées par Maestro
 
 Si votre question n'est pas répondue ici :
 
-1. Cherchez dans les [issues GitHub existantes](https://github.com/ossdocumentscanner/OSS-DocumentScanner/issues)
-2. [Créez une nouvelle issue](https://github.com/ossdocumentscanner/OSS-DocumentScanner/issues/new) avec votre question
-3. Consultez le [code source](https://github.com/ossdocumentscanner/OSS-DocumentScanner) pour les détails d'implémentation
+1. Cherchez dans les [issues GitHub existantes](https://github.com/ossappscollective/OSS-DocumentScanner/issues)
+2. [Créez une nouvelle issue](https://github.com/ossappscollective/OSS-DocumentScanner/issues/new) avec votre question
+3. Consultez le [code source](https://github.com/ossappscollective/OSS-DocumentScanner) pour les détails d'implémentation

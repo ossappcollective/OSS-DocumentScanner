@@ -17,7 +17,7 @@ Vous pouvez installer OSS CardWallet sur Android via :
 
 - **Google Play Store** : [Télécharger depuis Play Store](https://play.google.com/store/apps/details?id=com.akylas.cardwallet)
 - **IzzyOnDroid** : [Télécharger depuis IzzyOnDroid](https://apt.izzysoft.de/packages/com.akylas.cardwallet)
-- **Versions GitHub** : [Télécharger l'APK depuis GitHub](https://github.com/ossdocumentscanner/OSS-DocumentScanner/releases)
+- **Versions GitHub** : [Télécharger l'APK depuis GitHub](https://github.com/ossappscollective/OSS-DocumentScanner/releases)
 
 ### iOS
 
@@ -75,5 +75,5 @@ Au premier lancement, l'application demandera :
 
 ## Obtenir de l'Aide
 
-- **Problèmes** : [Signaler des bugs sur GitHub](https://github.com/ossdocumentscanner/OSS-DocumentScanner/issues)
+- **Problèmes** : [Signaler des bugs sur GitHub](https://github.com/ossappscollective/OSS-DocumentScanner/issues)
 - **Traductions** : [Aidez à traduire sur Weblate](https://hosted.weblate.org/engage/oss-document-scanner/)
