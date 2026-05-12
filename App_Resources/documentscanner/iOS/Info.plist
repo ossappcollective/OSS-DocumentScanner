@@ -3,9 +3,9 @@
 <plist version="1.0">
   <dict>
     <key>CFBundleShortVersionString</key>
-    <string>1.18.0</string>
+    <string>1.18.1</string>
     <key>CFBundleVersion</key>
-    <string>84</string>
+    <string>85</string>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
