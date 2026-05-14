@@ -103,7 +103,10 @@
     "contrast": "kontrasti",
     "copied": "kopioitu",
     "create": "luo",
+    "create_backup": "luo varmuuskopio",
+    "create_backup_desc": "luo täysi varmuuskopio kaikista tiedostoista ja kansioista",
     "create_barcode": "luo viivakoodi",
+    "creating_backup": "luodaan varmuuskopiota...",
     "crop_edit_doc": "kosketa näyttöä lähelle kulmaa, mutta älä päälle, jotta näet suurennuslasin. \nSovellus valitsee lähimmän kulman",
     "crop_enabled": "tunnistaa asiakirjan reunat ja rajata",
     "current_passcode": "Vanha PIN",
@@ -159,6 +162,7 @@
     "feedback_sent": "palaute lähetetty",
     "file_naming_settings": "kuvien/PDF:n nimeen liittyvät asetukset viennin aikana",
     "file_naming_template": "tiedostojen nimeämismalli",
+    "filename": "tiedostonimi",
     "filename_date_format": "tiedostonimen päivämäärämuoto",
     "filename_date_format_desc": "viety tiedostonimi perustuu nykyiseen aikaan. Tämä mahdollistaa muodon muuttamisen",
     "filename_date_format_fulldesc": "määrittää tiedostojen viennissä käytettävän päivämäärämuodon\n\n* käytä %1$s muotoon %2$s\n\n* käytä aikaleimaa %3$s (kesto ms vuodesta 1970 lähtien).\n\n* käytä mukautettua muotoa käyttämällä %4$s. \nLöydät lisää %5$s",
@@ -207,6 +211,9 @@
     "import_settings": "tuo asetukset",
     "import_settings_desc": "tuo kaikki asetukset varmuuskopiosta",
     "imported_nb_pages": "tuotu %1$s sivua",
+    "inapp": {
+        "bigtip_desc": "uusia ominaisuuksia tulossa!"
+    },
     "internal_storage": "sisäistä tallennustilaa",
     "invalid": "ei kelpaa",
     "ios": {
@@ -237,6 +244,7 @@
     "missing_export_folder": "puuttuva vientikansio",
     "missing_storage_perm_settings": "tallennuslupa tarvitaan asetusten viemiseen",
     "missing_webdav_password": "Puuttuva WebDAV-salasana. Huomaa, että sitä ei tallenneta paikallisesti, joten sinun on syötettävä se aina, kun muutat asetuksia",
+    "most_used": "eniten käytetyt",
     "move": "siirrä",
     "move_data": "siirtää tietoja?",
     "move_data_desc": "kaikki sovellustietosi siirretään ja sovellus käynnistetään uudelleen lopussa",
