@@ -65,6 +65,12 @@ add_app(scanner
     src/WhitePaperTransform2.cpp
     src/Utils.cpp
     src/ColorSimplificationTransform.cpp
+    # New algorithm files (from cpp/src) — not yet integrated; uncomment to build with them:
+    # src/AdaptiveBinarize.cpp
+    # src/SkewDetector.cpp
+    # src/WienerDenoiser.cpp
+    # src/BackgroundEstimator.cpp
+    # src/Despeckle.cpp
 )
 
 add_app(signature_app
