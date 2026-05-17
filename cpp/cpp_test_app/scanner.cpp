@@ -800,6 +800,15 @@ public:
         emit pipelineChanged();
     }
 
+    /** Clear all pipeline steps (e.g. called from a menu action). */
+    void clearPipeline() {
+        pipeline_.clear();
+        rebuildList();
+        if (paramForm_) paramForm_->clearStep();
+        presetCombo_->setCurrentIndex(0);
+        emit pipelineChanged();
+    }
+
 private slots:
     void onLoadPreset(int comboIdx) {
         // comboIdx 0 = "(custom)", 1..N = preset idx 0..N-1
@@ -1387,6 +1396,7 @@ private:
         auto* viewHl  = new QHBoxLayout(viewBar);
         viewHl->setContentsMargins(4,2,4,2); viewHl->setSpacing(4);
         auto* viewBtnGroup = new QButtonGroup(viewBar);
+        viewBtnGroup_ = viewBtnGroup;
         viewBtnGroup->setExclusive(true);
         static const QString viewNames[] = {"Source","Edges","Result","⟺ Compare"};
         for (int i = 0; i < 4; ++i) {
@@ -1463,13 +1473,8 @@ private:
             QAction* act = presetsMenu->addAction(pr.name, this, [this, i]{
                 pipelineWidget_->loadPresetByIndex(i);
                 viewMode_ = RESULT;
-                // Update view buttons: find and check the RESULT button
-                for (auto* btn : findChildren<QPushButton*>()) {
-                    if (btn->text() == "Result") {
-                        btn->setChecked(true);
-                        break;
-                    }
-                }
+                if (viewBtnGroup_)
+                    viewBtnGroup_->button(RESULT)->setChecked(true);
                 debounceTimer_->start();
             });
             act->setToolTip(pr.description);
@@ -1477,9 +1482,7 @@ private:
         }
         presetsMenu->addSeparator();
         presetsMenu->addAction("Clear Pipeline", this, [this]{
-            // Trigger the clear action via the pipeline widget's internal state
-            // by loading an empty preset
-            pipelineWidget_->loadPresetByIndex(-1); // -1 = no-op but triggers reset
+            pipelineWidget_->clearPipeline();
         });
 
         auto* viewMenu = menuBar()->addMenu("&View");
@@ -1543,6 +1546,7 @@ private:
     AlgorithmPipelineWidget* pipelineWidget_ = nullptr;
     DetectionSettingsWidget* detSettings_   = nullptr;
     QTimer*                 debounceTimer_  = nullptr;
+    QButtonGroup*           viewBtnGroup_   = nullptr; ///< View mode toggle buttons
 };
 
 // ============================================================
