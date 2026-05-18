@@ -2,6 +2,18 @@
 // Inspired by the page-split / gutter detection in scantailor-advanced
 // (https://github.com/farfromrefug/scantailor-advanced)
 // Reimplemented as a standalone OpenCV-only module — no Qt, no scantailor types.
+//
+// Algorithm overview (mirroring scantailor-advanced SplitLinesFinder):
+//   1. Downscale to a fast working size (≤ 800 px wide).
+//   2. Build a per-column "darkness" profile — a real gutter / spine shows
+//      as a dark vertical band due to the binding shadow.
+//   3. Build a per-column "content density" profile (horizontal Sobel) —
+//      text and line edges add energy everywhere except at the bare gutter.
+//   4. Combine both profiles (weighted sum), Gaussian-smooth the result.
+//   5. Search for the minimum (valley) in the central 20–80 % of the image.
+//   6. Statistical significance gate: the valley must be meaningfully lower
+//      than the flanking content regions; otherwise it is a single page.
+//   7. Map the detected column back to original-image coordinates.
 
 #include "include/GutterDetector.h"
 
@@ -14,42 +26,48 @@ namespace gutter {
 
 GutterResult detectGutter(const cv::Mat& input,
                           float minPageWidthRatio,
-                          int   blurSize,
+                          [[maybe_unused]] int blurSize,
                           float significanceGap)
 {
     GutterResult result;
-
     if (input.empty()) return result;
 
     // ── 1. Portrait images are never two-page spreads ─────────────────────
-    const int width  = input.cols;
-    const int height = input.rows;
-    if (height > width) return result; // portrait → no gutter
+    const int origW = input.cols;
+    const int origH = input.rows;
+    if (origH > origW) return result;
 
-    // ── 2. Convert to grayscale ───────────────────────────────────────────
+    // ── 2. Downscale for speed (process at ≤ 800 px wide) ─────────────────
+    // This dramatically speeds up Sobel and blur on large scans and also
+    // acts as a natural low-pass filter removing fine text-edge noise.
+    const int maxWorkW = 800;
     cv::Mat gray;
-    if (input.channels() == 1)
-        gray = input.clone();
-    else
-        cv::cvtColor(input, gray, cv::COLOR_BGR2GRAY);
-
-    // Optional light blur to reduce noise before column profiling
-    if (blurSize > 1) {
-        int kernelSize = (blurSize % 2 == 0) ? blurSize + 1 : blurSize;
-        cv::GaussianBlur(gray, gray, cv::Size(kernelSize, kernelSize), 0);
+    float downScale = 1.0f;
+    {
+        cv::Mat tmp;
+        if (input.channels() == 1) tmp = input; else cv::cvtColor(input, tmp, cv::COLOR_BGR2GRAY);
+        if (tmp.cols > maxWorkW) {
+            downScale = (float)maxWorkW / tmp.cols;
+            cv::resize(tmp, gray, cv::Size(), downScale, downScale, cv::INTER_AREA);
+        } else {
+            gray = tmp.clone();
+        }
     }
 
-    // ── 3. Per-column mean brightness ─────────────────────────────────────
-    // Dark columns (shadow at the binding crease) have low mean intensity.
-    cv::Mat colSum;
-    cv::reduce(gray, colSum, 0, cv::REDUCE_AVG, CV_32F);
-    // colSum is 1×width, row 0
-    std::vector<float> colMean(width);
-    for (int i = 0; i < width; i++)
-        colMean[i] = colSum.at<float>(0, i);
+    const int width  = gray.cols;
+    const int height = gray.rows;
 
-    // ── 4. Per-column horizontal-gradient energy ──────────────────────────
-    // At the gutter the image is smooth (no text edges crossing the binding).
+    // ── 3. Per-column mean brightness profile ─────────────────────────────
+    // Binding shadow → dark vertical strip → low colMean near gutter.
+    cv::Mat colMeanMat;
+    cv::reduce(gray, colMeanMat, 0, cv::REDUCE_AVG, CV_32F);
+    std::vector<float> colMean(width);
+    for (int i = 0; i < width; ++i)
+        colMean[i] = colMeanMat.at<float>(0, i);
+
+    // ── 4. Per-column content density (|dx| energy) ───────────────────────
+    // Text/graphics produce large horizontal gradients; the bare gutter
+    // has almost no content → low edge energy.
     cv::Mat sobelX;
     cv::Sobel(gray, sobelX, CV_32F, 1, 0, 3);
     cv::Mat absX;
@@ -57,85 +75,82 @@ GutterResult detectGutter(const cv::Mat& input,
     cv::Mat colGradMat;
     cv::reduce(absX, colGradMat, 0, cv::REDUCE_AVG, CV_32F);
     std::vector<float> colGrad(width);
-    for (int i = 0; i < width; i++)
+    for (int i = 0; i < width; ++i)
         colGrad[i] = colGradMat.at<float>(0, i);
 
-    // ── 5. Normalise both profiles to [0, 1] ──────────────────────────────
-    float meanMin = *std::min_element(colMean.begin(), colMean.end());
-    float meanMax = *std::max_element(colMean.begin(), colMean.end());
-    float gradMin = *std::min_element(colGrad.begin(), colGrad.end());
-    float gradMax = *std::max_element(colGrad.begin(), colGrad.end());
+    // ── 5. Normalise both profiles to [0, 1] and combine ──────────────────
+    auto normalise = [](std::vector<float>& v) {
+        float lo = *std::min_element(v.begin(), v.end());
+        float hi = *std::max_element(v.begin(), v.end());
+        float range = std::max(hi - lo, 1e-6f);
+        for (auto& x : v) x = (x - lo) / range;
+    };
+    normalise(colMean);
+    normalise(colGrad);
 
-    float meanRange = std::max(meanMax - meanMin, 1e-6f);
-    float gradRange = std::max(gradMax - gradMin, 1e-6f);
+    // gutterScore: low = likely gutter
+    //   darkness (60%): normalised mean → 0 at darkest column
+    //   content  (40%): normalised grad → 0 at emptiest column
+    const float kDark = 0.6f, kGrad = 0.4f;
+    std::vector<float> score(width);
+    for (int i = 0; i < width; ++i)
+        score[i] = kDark * colMean[i] + kGrad * colGrad[i];
 
-    // Combined "gutterScore": low score = likely gutter
-    //   darkness component: (colMean - meanMin) / meanRange  → 0 = darkest
-    //   gradient component: (colGrad - gradMin) / gradRange  → 0 = smoothest
-    const float kDarkWeight = 0.6f;
-    const float kGradWeight = 0.4f;
-    std::vector<float> gutterScore(width);
-    for (int i = 0; i < width; i++) {
-        float darkComp = (colMean[i] - meanMin) / meanRange;
-        float gradComp = (colGrad[i] - gradMin) / gradRange;
-        gutterScore[i] = kDarkWeight * darkComp + kGradWeight * gradComp;
-    }
-
-    // ── 6. Smooth column score profile ────────────────────────────────────
-    std::vector<float> smoothScore(width);
+    // ── 6. Smooth profile to suppress isolated noise spikes ───────────────
+    // Kernel width ≈ 3 % of image width (odd, ≥ 5).
+    std::vector<float> smooth(width);
     {
-        cv::Mat scoreRow(1, width, CV_32F, gutterScore.data());
+        int kw = std::max(5, (int)(width * 0.03f) | 1);  // ensure odd
+        cv::Mat scoreRow(1, width, CV_32F, score.data());
         cv::Mat smoothRow;
-        cv::GaussianBlur(scoreRow, smoothRow, cv::Size(15, 1), 0);
-        for (int i = 0; i < width; i++)
-            smoothScore[i] = smoothRow.at<float>(0, i);
+        cv::GaussianBlur(scoreRow, smoothRow, cv::Size(kw, 1), 0);
+        for (int i = 0; i < width; ++i)
+            smooth[i] = smoothRow.at<float>(0, i);
     }
 
-    // ── 7. Find valley in centre 30–70 % of width ─────────────────────────
-    const int searchMin = (int)(width * 0.30f);
-    const int searchMax = (int)(width * 0.70f);
-    if (searchMin >= searchMax) return result;
+    // ── 7. Valley search in central 20–80 % ───────────────────────────────
+    const int searchL = (int)(width * 0.20f);
+    const int searchR = (int)(width * 0.80f);
+    if (searchL >= searchR) return result;
 
-    int   gutterX    = searchMin;
-    float valleyScore = smoothScore[searchMin];
-    for (int i = searchMin + 1; i < searchMax; i++) {
-        if (smoothScore[i] < valleyScore) {
-            valleyScore = smoothScore[i];
+    int   gutterX    = searchL;
+    float valleyScore = smooth[searchL];
+    for (int i = searchL + 1; i < searchR; ++i) {
+        if (smooth[i] < valleyScore) {
+            valleyScore = smooth[i];
             gutterX    = i;
         }
     }
 
-    // ── 8. Statistical significance test ──────────────────────────────────
-    // Compute mean score in flanking regions (10–30 % and 70–90 %).
-    // The valley must be at least kSignificanceGap below the flank mean,
-    // otherwise there is no real gutter (single-page document).
+    // ── 8. Statistical significance gate ──────────────────────────────────
+    // Compare valley to mean of flanking regions (5–20 % and 80–95 %).
+    // A real gutter is a notable dark/empty vertical strip; if the "valley"
+    // is barely below the flanks, this is a single-page image.
     float flankSum = 0.0f; int flankCnt = 0;
-    for (int i = (int)(width * 0.10f); i < searchMin; i++) {
-        flankSum += smoothScore[i]; flankCnt++;
-    }
-    for (int i = searchMax; i < (int)(width * 0.90f); i++) {
-        flankSum += smoothScore[i]; flankCnt++;
-    }
+    for (int i = (int)(width * 0.05f); i < searchL; ++i) { flankSum += smooth[i]; ++flankCnt; }
+    for (int i = searchR; i < (int)(width * 0.95f); ++i) { flankSum += smooth[i]; ++flankCnt; }
     float flankMean = (flankCnt > 0) ? flankSum / flankCnt : 1.0f;
 
-    if (flankMean - valleyScore < significanceGap) {
-        // No statistically significant gutter
-        return result; // foundGutter = false
-    }
+    if (flankMean - valleyScore < significanceGap)
+        return result; // no statistically significant gutter
 
-    // ── 9. Build page ROIs ─────────────────────────────────────────────────
-    result.gutterX = gutterX;
-    int minWidth = static_cast<int>(width * minPageWidthRatio);
+    // ── 9. Map gutter column back to original image coordinates ───────────
+    int origGutterX = (downScale < 1.0f)
+                      ? (int)std::round(gutterX / downScale)
+                      : gutterX;
+    origGutterX = std::clamp(origGutterX, 0, origW - 1);
 
-    if (gutterX > minWidth) {
-        result.leftPage = cv::Rect(0, 0, gutterX, height);
+    result.gutterX = origGutterX;
+    const int minWidth = (int)(origW * minPageWidthRatio);
+
+    if (origGutterX > minWidth) {
+        result.leftPage = cv::Rect(0, 0, origGutterX, origH);
         result.hasLeft  = true;
     }
-    if (width - gutterX > minWidth) {
-        result.rightPage = cv::Rect(gutterX, 0, width - gutterX, height);
+    if (origW - origGutterX > minWidth) {
+        result.rightPage = cv::Rect(origGutterX, 0, origW - origGutterX, origH);
         result.hasRight  = true;
     }
-
     result.foundGutter = result.hasLeft || result.hasRight;
     return result;
 }

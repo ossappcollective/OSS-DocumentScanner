@@ -29,22 +29,23 @@ struct GutterResult {
  *   3. Per-column Sobel horizontal-gradient energy: gutter → low edge content.
  *   4. Combined normalised score (darkness 60 % + low gradient 40 %).
  *   5. Smooth with a Gaussian kernel to suppress isolated dark objects.
- *   6. Find minimum (valley) in the centre 30 – 70 % of the image width.
+ *   6. Find minimum (valley) in the centre 20 – 80 % of the image width.
  *   7. Statistical significance test: valley must be ≥ @p significanceGap
- *      below the mean of the flanking regions (10 – 30 % and 70 – 90 %).
+ *      below the mean of the flanking regions (5 – 20 % and 80 – 95 %).
  *      This prevents false detections on single-page documents.
  *
  * @param input            Input image (any depth / channel count; BGR recommended).
  * @param minPageWidthRatio Minimum fraction of image width for each valid page half
  *                          (default 0.20 ⟹ each page must be at least 20 % wide).
- * @param blurSize         Gaussian blur size for pre-smoothing column profiles.
+ * @param blurSize         (Unused; kept for API compatibility — smoothing is now
+ *                          auto-tuned to 3 % of image width.)
  * @param significanceGap  Required score gap between valley and flank mean.
  *                         0.05 = very sensitive, 0.40 = strict. Default 0.15.
  * @return                 GutterResult with gutter position and page ROIs.
  */
 GutterResult detectGutter(const cv::Mat& input,
                           float minPageWidthRatio = 0.20f,
-                          int   blurSize          = 5,
+                          [[maybe_unused]] int blurSize = 5,
                           float significanceGap   = 0.15f);
 
 } // namespace gutter

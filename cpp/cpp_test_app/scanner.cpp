@@ -192,6 +192,7 @@ struct PipelineStep {
     AlgoDef              def;
     QMap<QString,double> paramValues;
     bool                 enabled = true;
+    long long            lastMs  = -1; ///< Last execution time in ms; -1 = not yet run
 };
 
 static PipelineStep makeStep(const AlgoDef& def) {
@@ -766,6 +767,10 @@ public:
         listWidget_->setMinimumHeight(80);
         connect(listWidget_, &QListWidget::currentRowChanged,
                 this, &AlgorithmPipelineWidget::onSelectionChanged);
+        // itemChanged — connected ONCE here (never in addListRow) to avoid
+        // duplicate connections accumulating on every rebuildList() call.
+        connect(listWidget_, &QListWidget::itemChanged,
+                this, &AlgorithmPipelineWidget::onItemChanged);
         // Reorder via drag-and-drop
         connect(listWidget_->model(), &QAbstractItemModel::rowsMoved,
                 this, [this](auto,int,int,auto,int){
@@ -814,6 +819,21 @@ public:
     }
 
     const QVector<PipelineStep>& pipeline() const { return pipeline_; }
+
+    /**
+     * Update per-step timing labels shown in the pipeline list.
+     * @p timings must have one entry per pipeline step (in pipeline order);
+     *   a value of -1 means "step was skipped / disabled".
+     */
+    void updateStepTimings(const QVector<long long>& timings) {
+        for (int i = 0; i < (int)pipeline_.size() && i < timings.size(); ++i)
+            pipeline_[i].lastMs = timings[i];
+        // Refresh display text for all visible items
+        listWidget_->blockSignals(true);
+        for (int i = 0; i < listWidget_->count() && i < (int)pipeline_.size(); ++i)
+            updateItemText(listWidget_->item(i), pipeline_[i]);
+        listWidget_->blockSignals(false);
+    }
 
     /** Load a preset by its 0-based index in presets_. */
     void loadPresetByIndex(int idx) {
@@ -876,7 +896,7 @@ private slots:
         for (const auto& def : catalog_) {
             if (def.id == id) {
                 pipeline_.push_back(makeStep(def));
-                addListRow(pipeline_.back());
+                addListRow(pipeline_.back(), (int)pipeline_.size() - 1);
                 presetCombo_->setCurrentIndex(0); // mark as custom
                 emit pipelineChanged();
                 listWidget_->setCurrentRow(listWidget_->count() - 1);
@@ -920,18 +940,22 @@ private slots:
     }
 
 private:
-    void addListRow(const PipelineStep& step) {
+    void addListRow(const PipelineStep& step, int idx) {
         auto* item = new QListWidgetItem(listWidget_);
         updateItemText(item, step);
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(step.enabled ? Qt::Checked : Qt::Unchecked);
-        connect(listWidget_, &QListWidget::itemChanged, this,
-                &AlgorithmPipelineWidget::onItemChanged);
+        item->setData(Qt::UserRole, idx);
     }
 
     void updateItemText(QListWidgetItem* item, const PipelineStep& step) {
-        QString prefix = step.def.implemented ? "→ " : "⊘ ";
-        item->setText(prefix + step.def.name);
+        // Use plain ASCII prefixes ("-> ", "(!) ") rather than Unicode arrows to
+        // avoid rendering gaps on Linux systems that lack a full Unicode symbol font.
+        QString prefix = step.def.implemented ? "-> " : "(!) ";
+        QString text = prefix + step.def.name;
+        if (step.enabled && step.def.implemented && step.lastMs >= 0)
+            text += QString("  [%1 ms]").arg(step.lastMs);
+        item->setText(text);
         if (!step.def.implemented)
             item->setForeground(QColor(150,150,80));
         else
@@ -941,22 +965,18 @@ private:
     void rebuildList() {
         listWidget_->blockSignals(true);
         listWidget_->clear();
-        for (auto& s : pipeline_)
-            addListRow(s);
+        for (int i = 0; i < (int)pipeline_.size(); ++i)
+            addListRow(pipeline_[i], i);
         listWidget_->blockSignals(false);
     }
 
     void syncPipelineFromList() {
         QVector<PipelineStep> newPipeline;
+        newPipeline.reserve(pipeline_.size());
         for (int i = 0; i < listWidget_->count(); ++i) {
-            QString text = listWidget_->item(i)->text();
-            for (auto& s : pipeline_) {
-                QString t2 = (s.def.implemented ? "→ " : "⊘ ") + s.def.name;
-                if (t2 == text) {
-                    newPipeline.push_back(s);
-                    break;
-                }
-            }
+            int origIdx = listWidget_->item(i)->data(Qt::UserRole).toInt();
+            if (origIdx >= 0 && origIdx < (int)pipeline_.size())
+                newPipeline.push_back(pipeline_[origIdx]);
         }
         if (newPipeline.size() == pipeline_.size())
             pipeline_ = newPipeline;
@@ -1159,9 +1179,30 @@ public:
             item->setText(QString::fromStdString(
                 filesystem::path(imgPath).filename().string()));
             item->setToolTip(QString::fromStdString(imgPath));
+
+            // Try Qt reader first (handles EXIF orientation and most formats).
+            // setAutoTransform applies EXIF rotation/color-space data.
             QImageReader reader(QString::fromStdString(imgPath));
             reader.setScaledSize(QSize(88,66));
+            reader.setAutoTransform(true);
             QImage thumb = reader.read();
+
+            if (thumb.isNull()) {
+                // Fallback: load via OpenCV (ignores embedded color profiles
+                // but reliably reads the raw pixel data for most formats).
+                cv::Mat mat = cv::imread(imgPath, cv::IMREAD_COLOR);
+                if (!mat.empty()) {
+                    cv::Mat rgb;
+                    cv::cvtColor(mat, rgb, cv::COLOR_BGR2RGB);
+                    double sc = std::min(88.0 / rgb.cols, 66.0 / rgb.rows);
+                    if (sc < 1.0)
+                        cv::resize(rgb, rgb, cv::Size(), sc, sc, cv::INTER_AREA);
+                    QImage qi(rgb.data, rgb.cols, rgb.rows,
+                              (int)rgb.step, QImage::Format_RGB888);
+                    thumb = qi.copy(); // copy so buffer outlives mat
+                }
+            }
+
             if (!thumb.isNull())
                 item->setIcon(QIcon(QPixmap::fromImage(thumb)));
             fileList_->addItem(item);
@@ -1283,13 +1324,21 @@ private slots:
             leftDetectedPts_ = lPts;
             rightDetectedPts_= rPts;
 
-            // Run the algorithm pipeline on each page independently
+            // Run the algorithm pipeline on each page independently, timing each step
             leftPageResult_  = leftPageWarped_.empty()  ? Mat() : leftPageWarped_.clone();
             rightPageResult_ = rightPageWarped_.empty() ? Mat() : rightPageWarped_.clone();
-            for (auto& step : pipelineWidget_->pipeline()) {
-                if (!step.enabled) continue;
-                if (!leftPageResult_.empty())  applyStep(step, leftPageResult_);
-                if (!rightPageResult_.empty()) applyStep(step, rightPageResult_);
+            {
+                const auto& pl = pipelineWidget_->pipeline();
+                QVector<long long> timings(pl.size(), -1);
+                for (int si = 0; si < (int)pl.size(); ++si) {
+                    const auto& step = pl[si];
+                    if (!step.enabled) continue;
+                    QElapsedTimer st; st.start();
+                    if (!leftPageResult_.empty())  applyStep(step, leftPageResult_);
+                    if (!rightPageResult_.empty()) applyStep(step, rightPageResult_);
+                    timings[si] = st.elapsed();
+                }
+                pipelineWidget_->updateStepTimings(timings);
             }
 
             // For the RESULT view we stitch both pages side by side
@@ -1321,9 +1370,17 @@ private slots:
             }
 
             resultImage_ = warped_.empty() ? Mat() : warped_.clone();
-            for (auto& step : pipelineWidget_->pipeline()) {
-                if (!step.enabled || resultImage_.empty()) continue;
-                applyStep(step, resultImage_);
+            {
+                const auto& pl = pipelineWidget_->pipeline();
+                QVector<long long> timings(pl.size(), -1);
+                for (int si = 0; si < (int)pl.size(); ++si) {
+                    const auto& step = pl[si];
+                    if (!step.enabled || resultImage_.empty()) continue;
+                    QElapsedTimer st; st.start();
+                    applyStep(step, resultImage_);
+                    timings[si] = st.elapsed();
+                }
+                pipelineWidget_->updateStepTimings(timings);
             }
         }
 
