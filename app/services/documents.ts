@@ -707,7 +707,7 @@ LEFT JOIN
             if (filter?.length) {
                 const normalizedFilter = normalizeSearchString(filter);
                 const escaped = escapeLike(normalizedFilter);
-                const where = `p.nameSearch LIKE '%${escaped}%' OR d.nameSearch LIKE '%${escaped}%' OR p.ocrDataSearch LIKE '%${escaped}%'`;
+                const where = `p.nameSearch LIKE '%${escaped}%' OR d.nameSearch LIKE '%${escaped}%' OR p.ocrDataSearch LIKE '%${escaped}%' OR d.extra LIKE '%${escaped}%'`;
                 if (folder) {
                     args.postfix = sql` LEFT JOIN Page p ON p.document_id = d.id `;
                     args.where = new SqlQuery([`df.folder_id = ${folder.id} AND (${where})`]);
