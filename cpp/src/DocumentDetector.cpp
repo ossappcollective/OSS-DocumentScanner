@@ -4,6 +4,7 @@
 #include <ColorSimplificationTransform.h>
 #include <Utils.h>
 #include <jsoncons/json.hpp>
+#include "include/GutterDetector.h"
 using namespace detector;
 using namespace cv;
 using namespace std;
@@ -375,90 +376,20 @@ void correctGamma(const Mat &img, const Mat &dest, const double gamma_)
 
 DocumentDetector::PageSplitResult DocumentDetector::detectGutterAndSplit(const Mat& input,
                                       float minPageWidthRatio,
-                                      int blurSize)
+                                      int blurSize,
+                                      float significanceGap)
 {
-    CV_Assert(!input.empty());
-
-    Mat gray;
-    if (input.channels() == 3)
-        cvtColor(input, gray, COLOR_BGR2GRAY);
-    else
-        gray = input.clone();
-
-    // Slight blur reduces noise
-    GaussianBlur(gray, gray, Size(blurSize, blurSize), 0);
-
-    // Vertical gradient (detect vertical fold)
-    Mat gradX;
-    Sobel(gray, gradX, CV_32F, 1, 0, 3);
-
-    gradX = abs(gradX);
-
-    // Sum gradient magnitude per column
-    Mat columnEnergy;
-    reduce(gradX, columnEnergy, 0, REDUCE_SUM, CV_32F);
-
-    // Convert to vector for easier processing
-    vector<float> energy(columnEnergy.cols);
-    for (int i = 0; i < columnEnergy.cols; i++)
-        energy[i] = columnEnergy.at<float>(0, i);
-
-    // Smooth energy to avoid local noise spikes
-    const int smoothRadius = 15;
-    vector<float> smoothEnergy(energy.size(), 0);
-
-    for (int i = 0; i < energy.size(); i++) {
-        float sum = 0;
-        int count = 0;
-        for (int j = -smoothRadius; j <= smoothRadius; j++) {
-            int idx = i + j;
-            if (idx >= 0 && idx < energy.size()) {
-                sum += energy[idx];
-                count++;
-            }
-        }
-        smoothEnergy[i] = sum / count;
-    }
-
-    // Find gutter near center (avoid edges)
-    int width = input.cols;
-    int searchMin = width * 0.25;
-    int searchMax = width * 0.75;
-
-    int gutterX = -1;
-    float bestScore = FLT_MAX;
-
-    for (int i = searchMin; i < searchMax; i++) {
-        if (smoothEnergy[i] < bestScore) {
-            bestScore = smoothEnergy[i];
-            gutterX = i;
-        }
-    }
-
+    // Delegate to the standalone GutterDetector module.
+    gutter::GutterResult gr = gutter::detectGutter(input, minPageWidthRatio,
+                                                   blurSize, significanceGap);
     DocumentDetector::PageSplitResult result;
-    result.gutterX = gutterX;
-
-    if (gutterX < 0)
-        return result;
-
-    int minWidth = static_cast<int>(width * minPageWidthRatio);
-
-    // Left page ROI
-    if (gutterX > minWidth) {
-        result.leftPage = cv::Rect(0, 0, gutterX, input.rows);
-        result.hasLeft = true;
-    }
-
-    // Right page ROI
-    if (width - gutterX > minWidth) {
-        result.rightPage = cv::Rect(gutterX, 0, width - gutterX, input.rows);
-        result.hasRight = true;
-    }
-
-    // mark found gutter if any valid page ROI created
-    result.foundGutter = (gutterX >= 0) && (result.hasLeft || result.hasRight);
-
-     return result;
+    result.foundGutter = gr.foundGutter;
+    result.hasLeft     = gr.hasLeft;
+    result.hasRight    = gr.hasRight;
+    result.gutterX     = gr.gutterX;
+    result.leftPage    = gr.leftPage;
+    result.rightPage   = gr.rightPage;
+    return result;
 }
 
 

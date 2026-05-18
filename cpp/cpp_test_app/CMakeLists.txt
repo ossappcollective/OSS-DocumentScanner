@@ -65,6 +65,13 @@ add_app(scanner
     src/WhitePaperTransform2.cpp
     src/Utils.cpp
     src/ColorSimplificationTransform.cpp
+    # New algorithm files from scantailor-advanced ports:
+    src/GutterDetector.cpp
+    src/AdaptiveBinarize.cpp
+    src/SkewDetector.cpp
+    src/WienerDenoiser.cpp
+    src/BackgroundEstimator.cpp
+    src/Despeckle.cpp
 )
 
 add_app(signature_app

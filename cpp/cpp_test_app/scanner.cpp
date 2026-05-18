@@ -1,1138 +1,2166 @@
+// Document Scanner Test Suite — Qt6 QMainWindow application.
+// Replaces all OpenCV HighGUI (imshow / namedWindow / createTrackbar / waitKey)
+// with a proper Qt6 widget hierarchy.
+//
+// Layout:
+//   ┌────────┬───────────────────────────────┬──────────────────────┐
+//   │ Image  │  [Source][Edges][Result][⟺]   │  Algorithm Pipeline  │
+//   │  List  │                               │  ─────────────────   │
+//   │        │   ImageDisplayWidget          │  [ + Add Step ]      │
+//   │        │   (zoom / pan)                │  ─────────────────   │
+//   │        │                               │  ☑ Whitepaper ↑↓✕   │
+//   │        │                               │  ─────────────────   │
+//   │        │                               │  Parameters          │
+//   │        │                               │  slider controls     │
+//   └────────┴───────────────────────────────┴──────────────────────┘
+//   Status bar
+
 #include <opencv2/opencv.hpp>
-#include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/core/utility.hpp>
 
-// #include <tesseract/baseapi.h>
+#include <QApplication>
+#include <QMainWindow>
+#include <QWidget>
+#include <QSplitter>
+#include <QListWidget>
+#include <QLabel>
+#include <QSlider>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QPushButton>
+#include <QButtonGroup>
+#include <QToolBar>
+#include <QMenuBar>
+#include <QStatusBar>
+#include <QFileDialog>
+#include <QScrollArea>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QCheckBox>
+#include <QTimer>
+#include <QPixmap>
+#include <QImage>
+#include <QImageReader>
+#include <QPainter>
+#include <QScreen>
+#include <QWheelEvent>
+#include <QMouseEvent>
+#include <QResizeEvent>
+#include <QKeyEvent>
+#include <QFrame>
+#include <QScrollBar>
+#include <QMenu>
+#include <QMessageBox>
+#include <QElapsedTimer>
+#include <QAction>
+#include <QComboBox>
+#include <QDockWidget>
+#include <QSizePolicy>
+#include <QCursor>
+#include <QStyleOption>
 
-#include <stdio.h>
-#include <math.h>
-#include <iostream>
-#include <string>
 #include <filesystem>
+#include <string>
 #include <vector>
+#include <map>
+#include <algorithm>
+
 #include <DocumentDetector.h>
 #include <ColorSimplificationTransform.h>
 #include <WhitePaperTransform.h>
 #include <WhitePaperTransform2.h>
-
 #include <Utils.h>
-#include <stack>
-// #include <DocumentOCR.h>
 #include <jsoncons/json.hpp>
-
-#include <QApplication>
-#include <QScreen>
-#include <QWidget>
-#include <QTimer>
+// Algorithm libraries (scantailor-advanced ports)
+#include <AdaptiveBinarize.h>
+#include <SkewDetector.h>
+#include <WienerDenoiser.h>
+#include <BackgroundEstimator.h>
+#include <Despeckle.h>
+#include <GutterDetector.h>
 
 using namespace cv;
 using namespace std;
 
-// trim from start (in place)
-static inline void ltrim(std::string &s)
-{
-    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch)
-                                    { return !std::isspace(ch); }));
+// ============================================================
+//  Geometry helpers  (identical to original logic)
+// ============================================================
+
+static bool compareXCords(Point p1, Point p2) { return p1.x < p2.x; }
+static bool compareYCords(Point p1, Point p2) { return p1.y < p2.y; }
+static bool comparePairDist(pair<Point,Point> a, pair<Point,Point> b) {
+    return norm(a.first - a.second) < norm(b.first - b.second);
 }
-
-// trim from end (in place)
-static inline void rtrim(std::string &s)
-{
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch)
-                         { return !std::isspace(ch); })
-                .base(),
-            s.end());
+static double ptDist(Point p1, Point p2) {
+    double dx = p1.x - p2.x, dy = p1.y - p2.y;
+    return sqrt(dx*dx + dy*dy);
 }
-
-// trim from both ends (in place)
-static inline void trim(std::string &s)
-{
-    rtrim(s);
-    ltrim(s);
-}
-
-class DoubleTrack
-{
-public:
-    int int_value = 0;
-    double precision;
-    double *currentValue;
-    void (*user_callback)(double);
-
-    void setup(const std::string &field_name, const std::string &window_name, double *value, double max_value, void (*function)(double), unsigned precision = 100)
-    {
-        int_value = *value * precision;
-        user_callback = function;
-        this->precision = precision;
-        this->currentValue = value;
-        createTrackbar(field_name, window_name, &int_value, max_value * precision, DoubleTrack::callback, this);
-    }
-
-    static void callback(int, void *object)
-    {
-        DoubleTrack *pObject = static_cast<DoubleTrack *>(object);
-        *pObject->currentValue = pObject->int_value / pObject->precision;
-        pObject->user_callback(*pObject->currentValue);
-    }
-};
-
-void listFilesInFolder(string dirPath)
-{
-
-    for (auto &entry : std::filesystem::directory_iterator(dirPath))
-    {
-        std::cout << entry.path() << std::endl;
-    }
-}
-
-bool compareXCords(Point p1, Point p2)
-{
-    return (p1.x < p2.x);
-}
-
-bool compareYCords(Point p1, Point p2)
-{
-    return (p1.y < p2.y);
-}
-
-bool compareDistance(pair<Point, Point> p1, pair<Point, Point> p2)
-{
-    return (norm(p1.first - p1.second) < norm(p2.first - p2.second));
-}
-
-double _distance(Point p1, Point p2)
-{
-    return sqrt(((p1.x - p2.x) * (p1.x - p2.x)) +
-                ((p1.y - p2.y) * (p1.y - p2.y)));
-}
-
-void orderPoints(vector<Point> inpts, vector<Point> &ordered)
-{
+static void orderPoints(vector<Point> inpts, vector<Point>& ordered) {
     sort(inpts.begin(), inpts.end(), compareXCords);
-    vector<Point> lm(inpts.begin(), inpts.begin() + 2);
-    vector<Point> rm(inpts.end() - 2, inpts.end());
-
+    vector<Point> lm(inpts.begin(), inpts.begin()+2);
+    vector<Point> rm(inpts.end()-2, inpts.end());
     sort(lm.begin(), lm.end(), compareYCords);
-    Point tl(lm[0]);
-    Point bl(lm[1]);
-    vector<pair<Point, Point>> tmp;
-    for (size_t i = 0; i < rm.size(); i++)
-    {
-        tmp.push_back(make_pair(tl, rm[i]));
+    Point tl(lm[0]), bl(lm[1]);
+    vector<pair<Point,Point>> tmp;
+    for (auto& p : rm) tmp.push_back({tl, p});
+    sort(tmp.begin(), tmp.end(), comparePairDist);
+    Point tr(tmp[0].second), br(tmp[1].second);
+    ordered = {tl, tr, br, bl};
+}
+/** Return ws adjusted to the nearest odd number ≥ ws (minimum 1). */
+static int oddWindowSize(int ws) {
+    if (ws < 1) ws = 1;
+    return (ws % 2 == 0) ? ws + 1 : ws;
+}
+static Mat cropAndWarp(Mat src, vector<cv::Point> pts) {
+    int w = (int)ptDist(pts[0], pts[1]);
+    int h = (int)ptDist(pts[1], pts[2]);
+    if (w <= 0 || h <= 0) return {};
+    Mat dst = Mat::zeros(h, w, src.type());
+    vector<Point2f> sp = {
+        {(float)pts[0].x,(float)pts[0].y},
+        {(float)pts[1].x,(float)pts[1].y},
+        {(float)pts[3].x,(float)pts[3].y},
+        {(float)pts[2].x,(float)pts[2].y}
+    };
+    vector<Point2f> dp = {{0,0},{(float)w,0},{0,(float)h},{(float)w,(float)h}};
+    Mat T = getPerspectiveTransform(sp, dp);
+    warpPerspective(src, dst, T, dst.size());
+    return dst;
+}
+static vector<string> loadImagesFromFolder(const string& dir) {
+    vector<string> imgs;
+    static const vector<string> kExts = {
+        ".jpg",".jpeg",".png",".bmp",".tiff",".tif",".webp"
+    };
+    for (auto& e : filesystem::directory_iterator(dir)) {
+        if (!e.is_regular_file()) continue;
+        string ext = e.path().extension().string();
+        transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (find(kExts.begin(), kExts.end(), ext) != kExts.end())
+            imgs.push_back(e.path().string());
     }
-
-    sort(tmp.begin(), tmp.end(), compareDistance);
-    Point tr(tmp[0].second);
-    Point br(tmp[1].second);
-
-    ordered.push_back(tl);
-    ordered.push_back(tr);
-    ordered.push_back(br);
-    ordered.push_back(bl);
+    sort(imgs.begin(), imgs.end());
+    return imgs;
 }
 
-Mat cropAndWarp(Mat src, vector<cv::Point> orderedPoints)
-{
-    int newWidth = _distance(orderedPoints[0], orderedPoints[1]);
-    int newHeight = _distance(orderedPoints[1], orderedPoints[2]);
-    Mat dstBitmapMat = Mat::zeros(newHeight, newWidth, src.type());
+// ============================================================
+//  JSONCONS traits
+// ============================================================
 
-    std::vector<Point2f> srcTriangle;
-    std::vector<Point2f> dstTriangle;
+JSONCONS_N_MEMBER_TRAITS(WhitePaperTransformOptions, 0,
+    csBlackPer, csWhitePer, gaussKSize, gaussSigma, gammaValue,
+    cbBlackPer, cbWhitePer, dogKSize, dogSigma2);
 
-    srcTriangle.push_back(Point2f(orderedPoints[0].x, orderedPoints[0].y));
-    srcTriangle.push_back(Point2f(orderedPoints[1].x, orderedPoints[1].y));
-    srcTriangle.push_back(Point2f(orderedPoints[3].x, orderedPoints[3].y));
-    srcTriangle.push_back(Point2f(orderedPoints[2].x, orderedPoints[2].y));
+// ============================================================
+//  Helper: cv::Mat → QPixmap
+// ============================================================
 
-    dstTriangle.push_back(Point2f(0, 0));
-    dstTriangle.push_back(Point2f(newWidth, 0));
-    dstTriangle.push_back(Point2f(0, newHeight));
-    dstTriangle.push_back(Point2f(newWidth, newHeight));
-
-    Mat transform = getPerspectiveTransform(srcTriangle, dstTriangle);
-    warpPerspective(src, dstBitmapMat, transform, dstBitmapMat.size());
-    return dstBitmapMat;
+static QPixmap matToQPixmap(const Mat& mat) {
+    if (mat.empty()) return {};
+    Mat rgb;
+    if (mat.channels() == 1)
+        cvtColor(mat, rgb, COLOR_GRAY2RGB);
+    else
+        cvtColor(mat, rgb, COLOR_BGR2RGB);
+    QImage img(rgb.data, rgb.cols, rgb.rows,
+               (int)rgb.step, QImage::Format_RGB888);
+    return QPixmap::fromImage(img.copy()); // copy so buffer outlives Mat
 }
 
-detector::DocumentDetector docDetector(300, 0);
-int cannyFactor = docDetector.options.cannyFactor * 100;
-// int cannyThreshold1 = docDetector.cannyThreshold1;
-// int cannyThreshold2 = docDetector.cannyThreshold2;
-int morphologyAnchorSize = docDetector.options.morphologyAnchorSize;
-int dilateAnchorSize = docDetector.options.dilateAnchorSize;
-// int gaussianBlur = docDetector.gaussianBlur;
-int medianBlurValue = docDetector.options.medianBlurValue;
-int bilateralFilterValue = docDetector.options.bilateralFilterValue;
-// int dilateAnchorSizeBefore = docDetector.dilateAnchorSizeBefore;
-int houghLinesThreshold = docDetector.options.houghLinesThreshold;
-int houghLinesMinLineLength = docDetector.options.houghLinesMinLineLength;
-int houghLinesMaxLineGap = docDetector.options.houghLinesMaxLineGap;
-int thresh = docDetector.options.thresh;
-int threshMax = docDetector.options.threshMax;
-// int adapThresholdBlockSize = docDetector.adapThresholdBlockSize; // 391
-// int adapThresholdC = docDetector.adapThresholdBlockSize;         // 53
-// int gammaCorrection = docDetector.gammaCorrection * 10;          // 53
-// int shouldNegate = docDetector.shouldNegate;                     // 53
-int useChannel = 0;                                                               // 53
-int contoursApproxEpsilonFactor = docDetector.options.contoursApproxEpsilonFactor * 1000; // 53
+// ============================================================
+//  Data structures: algorithm catalogue
+// ============================================================
 
-int whitepaper = 0;
-int whitepaper2 = 0;
-int enhance = 0;
-int enhanceAfter = 0;
-int process1 = 0;
-int colors = 0;
-Mat edged;
-Mat warped;
-Mat image;
-bool canUpdateImage = false;
-Mat resizedImage;
-int imageIndex = 0;
-int colorsResizeThreshold = 100;
-int distanceThreshold = 40;
-int colorsFilterDistanceThreshold = 20;
-int colorSpace = 0;
-int paletteColorSpace = 2;
-int paletteNbColors = 5;
+struct AlgoParam {
+    QString id;
+    QString label;
+    double  minVal, maxVal, defaultVal, step;
+};
 
-int dogKSize = 15;
-int dogSigma1 = 100.0;
-int dogSigma2 = 0.0;
+struct AlgoDef {
+    QString          id;
+    QString          name;
+    bool             implemented; // false = placeholder / todo
+    QVector<AlgoParam> params;
+};
 
-bool tesseractDemo = true;
-int actualTesseractDetect = 1;
-int desseractDetectContours = 1;
+struct PipelineStep {
+    AlgoDef              def;
+    QMap<QString,double> paramValues;
+    bool                 enabled = true;
+    long long            lastMs  = -1; ///< Last execution time in ms; -1 = not yet run
+};
 
-int textDetectDilate = 40; // 0
-int textDetect1 = 70;      // 34
-int textDetect2 = 4;       // 12
-
-WhitePaperTransformOptions whitepaperOptions;
-
-inline uchar reduceVal(const uchar val)
-{
-    if (val > 128)
-        return 255;
-    // if (val > 50) return 128;
-    return val;
+static PipelineStep makeStep(const AlgoDef& def) {
+    PipelineStep s;
+    s.def     = def;
+    s.enabled = true;
+    for (const auto& p : def.params)
+        s.paramValues[p.id] = p.defaultVal;
+    return s;
 }
 
-inline uchar reduceVal2(const uchar val)
-{
-    if (val < 64)
-        return 0;
-    if (val < 128)
-        return 64;
-    return 255;
+static QVector<AlgoDef> buildCatalog() {
+    QVector<AlgoDef> c;
+
+    QVector<AlgoParam> wpParams = {
+        {"csBlackPer","Black Percentile",  0,  100, 2,    1  },
+        {"csWhitePer","White Percentile",  0,  100, 99.5, 0.5},
+        {"gaussKSize","Gauss KSize",        1,  99,  3,    2  },
+        {"dogKSize",  "DoG KSize",          1,  99,  15,   2  },
+        {"dogSigma1", "DoG Sigma 1",        0,  200, 100,  1  },
+        {"dogSigma2", "DoG Sigma 2",        0,  100, 0,    1  },
+    };
+
+    c.push_back({"whitepaper",  "Whitepaper",           true, wpParams});
+    c.push_back({"whitepaper2", "Whitepaper 2",         true, wpParams});
+    c.push_back({"enhance",     "Enhance",              true, {}});
+    c.push_back({"colors",      "Color Simplification", true, {
+        {"resizeThreshold",     "Resize Threshold",  10, 500, 100, 1},
+        {"filterDistThreshold", "Filter Dist Thresh", 1, 100, 20,  1},
+        {"distThreshold",       "Distance Threshold", 1, 100, 40,  1},
+        {"nbColors",            "Num Colors",         2, 20,  5,   1},
+        {"colorSpace",          "Color Space",        0, 5,   0,   1},
+        {"paletteColorSpace",   "Palette Space",      0, 5,   2,   1},
+    }});
+
+    // ---- Adaptive Binarization (all fully implemented) ----
+    c.push_back({"adaptive_sauvola","Adaptive Binarize: Sauvola",true,{
+        {"windowSize","Window Size",5,101,25,2},
+        {"k",         "K (×0.01)", 1,100,34,1},
+        {"delta",     "Delta",     0,100, 0,1},
+    }});
+    c.push_back({"adaptive_wolf","Adaptive Binarize: Wolf",true,{
+        {"windowSize","Window Size",5,101,25,2},
+        {"k",         "K (×0.01)", 1,100,30,1},
+    }});
+    c.push_back({"adaptive_bradley","Adaptive Binarize: Bradley",true,{
+        {"windowSize","Window Size",5,101,25,2},
+        {"k",         "K (×0.01)", 1,100,15,1},
+    }});
+    c.push_back({"adaptive_edgediv","Adaptive Binarize: EdgeDiv",true,{
+        {"windowSize","Window Size",5,101,25,2},
+        {"kep",       "kep (×0.01)",0,100,50,1},
+        {"kdb",       "kdb (×0.01)",0,100,50,1},
+    }});
+    c.push_back({"adaptive_grad","Adaptive Binarize: Grad",true,{
+        {"windowSize","Window Size",5,101,25,2},
+        {"k",         "K (×0.01)", 1,100,30,1},
+    }});
+    c.push_back({"skew_correct","Skew Correction",true,{
+        {"maxAngle","Max Angle (deg)",1,45,10,1},
+    }});
+    c.push_back({"wiener_denoise","Wiener Denoise (grayscale)",true,{
+        {"windowSize","Window Size",1,15,5,1},
+        {"noiseSigma","Noise Sigma",1,100,10,1},
+    }});
+    c.push_back({"wiener_color","Wiener Denoise (color-preserving)",true,{
+        {"windowSize","Window Size",1,15,5,1},
+        {"coef",      "Coef (×0.01)",1,100,10,1},
+    }});
+    c.push_back({"bg_normalize","Background Normalize",true,{
+        {"polyDegree",    "Poly Degree",    1,8,4,1},
+        {"marginFraction","Margin % (×0.01)",5,40,15,1},
+    }});
+    c.push_back({"despeckle_cautious",  "Despeckle (Cautious)",   true, {}});
+    c.push_back({"despeckle_normal",    "Despeckle (Normal)",     true, {}});
+    c.push_back({"despeckle_aggressive","Despeckle (Aggressive)", true, {}});
+
+    return c;
 }
-void processColors(Mat &img)
-{
-    Mat dest;
-    cvtColor(img, dest, COLOR_BGR2HLS);
-    uchar *pixelPtr = dest.data;
-    for (int i = 0; i < dest.rows; i++)
-    {
-        for (int j = 0; j < dest.cols; j++)
+
+// ============================================================
+//  Pipeline Presets — example mode configurations
+// ============================================================
+
+/**
+ * A named pipeline preset.  Each step stores an algorithm ID and optional
+ * parameter overrides; any param NOT overridden uses the AlgoDef default.
+ */
+struct PipelinePreset {
+    QString name;
+    QString description;
+    /// {algoId, paramOverrides}  — empty map = use AlgoDef defaults
+    QVector<QPair<QString, QMap<QString,double>>> steps;
+};
+
+/**
+ * Build the predefined preset list.  Every algo ID here must be present
+ * in the catalogue produced by buildCatalog().
+ *
+ * The presets are intended as demonstrations / starting points; the user
+ * can freely modify each step after loading.
+ */
+static QVector<PipelinePreset> buildPresets() {
+    QVector<PipelinePreset> p;
+
+    // ---- 📖 Book Scan ----
+    // Gutter detection is automatic (built into DocumentDetector::detectGutterAndSplit).
+    // This pipeline handles the per-page image quality.
+    p.push_back({
+        "📖 Book Scan",
+        "Two-page book scan — gutter detection splits pages automatically.\n"
+        "Normalizes illumination (page curl shadows), deskews each page,\n"
+        "denoises, then binarizes with Sauvola (optimal for ink on paper\n"
+        "with spine shadow gradients). Finish with light despeckle.",
         {
-            const int pi = i * dest.cols * 3 + j * 3;
-            // pixelPtr[pi + 0] = reduceVal(pixelPtr[pi + 0]); // B
-            // pixelPtr[pi + 1] = reduceVal2(pixelPtr[pi + 1]); // G
-            pixelPtr[pi + 2] = reduceVal2(pixelPtr[pi + 2]); // R
+            {"bg_normalize",    {{"polyDegree", 4}, {"marginFraction", 15}}},
+            {"skew_correct",    {{"maxAngle", 10}}},
+            {"wiener_denoise",  {{"windowSize", 5}, {"noiseSigma", 8}}},
+            {"adaptive_sauvola",{{"windowSize", 25}, {"k", 34}, {"delta", 0}}},
+            {"despeckle_normal",{}},
         }
-    }
-    cvtColor(dest, img, COLOR_HLS2BGR);
+    });
+
+    // ---- 📄 Whitepaper Document ----
+    p.push_back({
+        "📄 Whitepaper Document",
+        "Flat whitepaper / whiteboard document: corrects colour cast and\n"
+        "contrast with the Whitepaper transform, then applies Enhance for\n"
+        "additional sharpening and a cautious despeckle.",
+        {
+            {"whitepaper",         {}},
+            {"enhance",            {}},
+            {"despeckle_cautious", {}},
+        }
+    });
+
+    // ---- 📄 Whitepaper 2 (Alt) ----
+    p.push_back({
+        "📄 Whitepaper 2 (Alt)",
+        "Alternative whitepaper pipeline using the secondary transform\n"
+        "(different highlight recovery), followed by colour simplification\n"
+        "to a small palette — great for diagrams and handwritten notes.",
+        {
+            {"whitepaper2",        {}},
+            {"colors",             {{"nbColors", 4}, {"filterDistThreshold", 15}}},
+            {"despeckle_cautious", {}},
+        }
+    });
+
+    // ---- 🔤 OCR Preparation ----
+    p.push_back({
+        "🔤 OCR Preparation",
+        "Optimised for optical character recognition:\n"
+        "1) Background-normalize (removes uneven lighting).\n"
+        "2) Skew-correct (horizontal text lines → max projection variance).\n"
+        "3) Wiener denoise (preserve strokes, reduce scan noise).\n"
+        "4) Wolf binarization (robust to varying local contrast).\n"
+        "5) Normal despeckle (remove dots that confuse OCR engines).",
+        {
+            {"bg_normalize",    {{"polyDegree", 4}}},
+            {"skew_correct",    {{"maxAngle", 10}}},
+            {"wiener_denoise",  {{"windowSize", 7}, {"noiseSigma", 12}}},
+            {"adaptive_wolf",   {{"windowSize", 25}, {"k", 30}}},
+            {"despeckle_normal",{}},
+        }
+    });
+
+    // ---- 🎨 Color Document ----
+    p.push_back({
+        "🎨 Color Document",
+        "Preserves colour while reducing noise and normalizing illumination.\n"
+        "Colour-preserving Wiener filter → background normalization →\n"
+        "colour-palette simplification (keep 6 colours by default).\n"
+        "Suitable for maps, charts, and colour-rich printed documents.",
+        {
+            {"wiener_color",  {{"windowSize", 5}, {"coef", 8}}},
+            {"bg_normalize",  {{"polyDegree", 3}}},
+            {"colors",        {{"nbColors", 6}, {"filterDistThreshold", 15}}},
+        }
+    });
+
+    // ---- 🌑 Shadow Removal ----
+    p.push_back({
+        "🌑 Shadow Removal",
+        "Removes cast shadows and uneven lighting using high-degree\n"
+        "polynomial background estimation followed by EdgeDiv binarization,\n"
+        "which blends edge-enhanced and blur-divided images — very robust\n"
+        "against illumination gradients near the spine or under a lamp.\n"
+        "Best combined with Book Scan for double-page spreads.",
+        {
+            {"bg_normalize",     {{"polyDegree", 5}, {"marginFraction", 20}}},
+            {"wiener_denoise",   {{"windowSize", 3}, {"noiseSigma", 5}}},
+            {"adaptive_edgediv", {{"windowSize", 31}, {"kep", 60}, {"kdb", 40}}},
+            {"despeckle_cautious",{}},
+        }
+    });
+
+    // ---- ✏️ Gradient Binarize (Grad) ----
+    p.push_back({
+        "✏️ Gradient Binarize",
+        "Uses the scantailor-advanced Grad method (zvezdochiot 2024):\n"
+        "classifies a pixel as foreground when it falls below\n"
+        "  mean - k * (maxStd - localStd)\n"
+        "Very crisp edges; works well on pencil and ink drawings.\n"
+        "Preceded by background normalization and a light denoise.",
+        {
+            {"bg_normalize",    {{"polyDegree", 3}}},
+            {"wiener_denoise",  {{"windowSize", 3}, {"noiseSigma", 6}}},
+            {"adaptive_grad",   {{"windowSize", 25}, {"k", 30}}},
+            {"despeckle_cautious",{}},
+        }
+    });
+
+    // ---- 📋 Document (Standard) ----
+    p.push_back({
+        "📋 Document (Standard)",
+        "General-purpose document pipeline for everyday scanning:\n"
+        "1) Background-normalize to remove uneven lighting.\n"
+        "2) Skew-correct to straighten tilted pages.\n"
+        "3) Whitepaper transform for contrast and white balance.\n"
+        "4) Cautious despeckle to clean up dust/noise artifacts.\n"
+        "Works well for letters, forms, and printed documents.",
+        {
+            {"bg_normalize",       {{"polyDegree", 3}}},
+            {"skew_correct",       {{"maxAngle", 10}}},
+            {"whitepaper",         {}},
+            {"despeckle_cautious", {}},
+        }
+    });
+
+    // ---- 🪪 ID / Loyalty Card ----
+    p.push_back({
+        "🪪 ID / Loyalty Card",
+        "Optimised for scanning plastic cards (ID cards, loyalty cards,\n"
+        "business cards) to extract text for OCR:\n"
+        "1) Background-normalize to remove surface reflections.\n"
+        "2) Color simplification (4 colors) to remove noisy backgrounds\n"
+        "   and isolate the printed text/logo areas.\n"
+        "3) Wolf binarization for robust local-contrast thresholding.\n"
+        "4) Cautious despeckle to remove fine printing artifacts.",
+        {
+            {"bg_normalize",       {{"polyDegree", 2}, {"marginFraction", 10}}},
+            {"colors",             {{"nbColors", 4}, {"filterDistThreshold", 20}, {"distThreshold", 30}}},
+            {"adaptive_wolf",      {{"windowSize", 21}, {"k", 25}}},
+            {"despeckle_cautious", {}},
+        }
+    });
+
+    return p;
 }
 
-std::vector<string> images = {};
 
-void setImagesFromFolder(string dirPath)
-{
-    images.clear();
-    for (auto &entry : std::filesystem::directory_iterator(dirPath))
-    {
-        images.push_back(entry.path());
-    }
-}
+// ============================================================
+//  ImageDisplayWidget — shows a cv::Mat with zoom and pan
+// ============================================================
 
-void preprocess_ocr(const Mat &image, const Mat &rgb)
-{
-    cvtColor(image, rgb, COLOR_BGR2GRAY);
-    cv::adaptiveThreshold(rgb, rgb, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 197, 48);
-}
-
-// void updateImage()
-// {
-
-//     if (!canUpdateImage) {
-//         return;
-//     }
-//     docDetector.options.cannyFactor = cannyFactor / 100;
-//     // docDetector.cannyThreshold1 = cannyThreshold1;
-//     // docDetector.cannyThreshold2 = cannyThreshold2;
-//     docDetector.options.dilateAnchorSize = dilateAnchorSize;
-//     // docDetector.dilateAnchorSizeBefore = dilateAnchorSizeBefore;
-//     // docDetector.dilateAnchorSizeBefore = dilateAnchorSizeBefore;
-//     docDetector.options.houghLinesThreshold = houghLinesThreshold;
-//     docDetector.options.houghLinesMinLineLength = houghLinesMinLineLength;
-//     docDetector.options.houghLinesMaxLineGap = houghLinesMaxLineGap;
-//     // docDetector.adapThresholdBlockSize = adapThresholdBlockSize;
-//     // docDetector.adapThresholdC = adapThresholdC;
-//     docDetector.options.morphologyAnchorSize = morphologyAnchorSize;
-//     // docDetector.shouldNegate = shouldNegate;
-//     docDetector.options.useChannel = useChannel - 1;
-//     docDetector.options.bilateralFilterValue = bilateralFilterValue;
-//     docDetector.options.thresh = thresh;
-//     docDetector.options.threshMax = threshMax;
-//     // docDetector.gammaCorrection = gammaCorrection / 10.0;
-//     docDetector.options.contoursApproxEpsilonFactor = contoursApproxEpsilonFactor / 1000.0;
-//     // if (gaussianBlur > 0 && gaussianBlur % 2 == 0)
-//     // {
-//     //     docDetector.gaussianBlur = gaussianBlur + 1;
-//     // }
-//     // else
-//     // {
-//     //     docDetector.gaussianBlur = gaussianBlur;
-//     // }
-//     if (medianBlurValue > 0 && medianBlurValue % 2 == 0)
-//     {
-//         docDetector.options.medianBlurValue = medianBlurValue + 1;
-//     }
-//     else
-//     {
-//         docDetector.options.medianBlurValue = medianBlurValue;
-//     }
-//     docDetector.image = image;
-//     resizedImage = docDetector.resizeImageMax();
-
-//     detector::DocumentDetector::PageSplitResult split = docDetector.detectGutterAndSplit(resizedImage, 0.4f);
-
-//     vector<vector<cv::Point>> pointsList;
-//     // If a gutter was found, scan each page sub-image and merge results into original coordinate system
-//     if (split.foundGutter)
-//     {
-//         Mat combinedEdged = Mat::zeros(resizedImage.size(), CV_8U);
-//         // helper lambda to scan a ROI and merge results
-//         auto scanAndMerge = [&](const Rect &r) {
-//             if (r.width <= 0 || r.height <= 0) return;
-//             Mat subImg = resizedImage(r);
-//             imshow("subImg", subImg);
-//          Mat subEdged;
-//             vector<vector<Point>> subList = docDetector.scanPoint(subEdged, subImg, true);
-//             // copy subEdged into combinedEdged for display
-//             if (!subEdged.empty())
-//             {
-//                 // ensure types match
-//                 if (subEdged.type() != combinedEdged.type()) cv::cvtColor(subEdged, subEdged, COLOR_BGR2GRAY);
-//                 subEdged.copyTo(combinedEdged(r));
-//             }
-//             // offset points from sub-image to full image coordinates (respecting detector scaling)
-//             double scaleFactor = docDetector.resizeScale * docDetector.scale;
-//             Point offset(static_cast<int>(r.x * scaleFactor), static_cast<int>(r.y * scaleFactor));
-//             for (auto &contour : subList)
-//             {
-//                 for (auto &pt : contour)
-//                 {
-//                     pt += offset;
-//                 }
-//                 pointsList.push_back(contour);
-//             }
-//         };
-
-//         if (split.hasLeft) scanAndMerge(split.leftPage);
-//         if (split.hasRight) scanAndMerge(split.rightPage);
-
-//         // if nothing detected on both sides, fallback to whole image scan
-//         if (pointsList.empty())
-//         {
-//             pointsList = docDetector.scanPoint(edged, resizedImage, true);
-//         }
-//         else
-//         {
-//             // use combined edged for display
-//             edged = combinedEdged;
-//         }
-//     }
-//     else
-//     {
-//         // no gutter: scan whole image as before
-//         pointsList = docDetector.scanPoint(edged, resizedImage, true);
-//     }
- 
-//      if (pointsList.size() == 0)
-//      {
-//          vector<cv::Point> points;
-//          points.push_back(cv::Point(0, 0));
-//          points.push_back(cv::Point(image.cols, 0));
-//          points.push_back(cv::Point(image.cols, image.rows));
-//          points.push_back(cv::Point(0, image.rows));
-//          pointsList.push_back(points);
-//      }
-
-//     // for (size_t i = 0; i < pointsList.size(); i++)
-//     // {
-//     //     vector<cv::Point> orderedPoints;
-//     //     orderPoints(pointsList[i], orderedPoints);
-//     // }
-
-//     if (pointsList.size() > 0)
-//     {
-//         // cv::polylines(resizedImage, pointsList[0], true, Scalar(255, 0, 0), 2, 8);
-//         // vector<cv::Point> orderedPoints;
-//         // orderPoints(pointsList[0], orderedPoints);
-//         warped = cropAndWarp(image, pointsList[0]);
-//         if (whitepaper == 1)
-//         {
-//             string s;
-//             encode_json(whitepaperOptions, s, jsoncons::indenting::no_indent);
-//             detector::DocumentDetector::applyTransforms(warped, "whitepaper_" + s);
-//         }
-//         if (whitepaper2 == 1)
-//         {
-//             string s;
-//             encode_json(whitepaperOptions, s, jsoncons::indenting::no_indent);
-//             detector::DocumentDetector::applyTransforms(warped, "whitepaper2_" + s);
-//         }
-//         if (enhance == 1)
-//         {
-//             detector::DocumentDetector::applyTransforms(warped, "enhance");
-//         }
-//         // if (process1 == 1)
-//         // {
-//         //     // warped = quantizeImage(warped, 2);
-//         //     processColors(warped);
-//         //     // cv::stylization(warped, warped, 60, 0.07);
-//         // }
-//         if (colors == 1)
-//         {
-//             std::stringstream stream;
-//             stream << "colors_" << colorsResizeThreshold << "_" << colorsFilterDistanceThreshold << "_" << distanceThreshold << "_" << (colorSpace - 1);
-//             // detector::DocumentDetector::applyTransforms(warped, stream.str());
-//             std::vector<std::pair<Vec3b, float>> colors = colorSimplificationTransform(warped, warped, false, colorsResizeThreshold, colorsFilterDistanceThreshold, distanceThreshold, paletteNbColors, (ColorSpace)(colorSpace), (ColorSpace)(paletteColorSpace));
-//             for (int index = 0; index < colors.size(); ++index)
-//             {
-//                 auto color = colors.at(index).first;
-//                 auto rbgColor = ColorSpaceToBGR(color, (ColorSpace)(colorSpace));
-//                 std::stringstream stream;
-//                 stream << "\e[48;2;" << (int)rbgColor(2) << ";" << (int)rbgColor(1) << ";" << (int)rbgColor(0) << "m   \e[0m";
-//                 // ESC[48;2;⟨r⟩;⟨g⟩;⟨b⟩m
-//                 //     __android_log_print(ANDROID_LOG_INFO, "JS", "Color  Color %s Area: %f% %d\n", rgbSexString(HLStoBGR(color.first)).c_str(), 100.f * float(color.second) / n, colors.size());
-//                 cout << stream.str() << "Color: " << colors.size() << " - Hue: " << (int)color(0) << " - Lightness: " << (int)color(1) << " - Saturation: " << (int)color(2) << " " << BGRHexString(rbgColor) << " - Area: " << 100.f * (colors.at(index).second) << "%" << endl;
-//                 rectangle(warped, cv::Rect(index * 60, 0, 60, 60), Scalar(rbgColor(0), rbgColor(1), rbgColor(2)), -1);
-//             }
-
-//             // processColors2(warped);
-//             // cv::stylization(warped, warped, 60, 0.07);
-//         }
-//     }
-//     else
-//     {
-//         warped = Mat();
-//     }
-//     imshow("SourceImage", resizedImage);
-//     imshow("Edges", edged);
-//     if (!warped.empty())
-//     {
-
-//         // if (tesseractDemo)
-//         // {
-//         //     // warped = resizeImageToThreshold(warped, 500, 0);
-//         //     // Mat toTest;
-//         //     // preprocess_ocr(warped, toTest);
-//         //     // cvtColor(warped, toTest, COLOR_BGR2GRAY);
-//         //     // tesseractTest(warped, warped);
-//         //     // detectTextOrientation(toTest);
-//         //     // Mat res;
-//         //     detector::DocumentOCR::DetectOptions options;
-//         //     options.dataPath = "/home/mguillon/Downloads/tesseract/best";
-//         //     options.language = "fra";
-//         //     options.adapThresholdBlockSize = adapThresholdBlockSize;
-//         //     options.adapThresholdC = adapThresholdC;
-//         //     options.desseractDetectContours = desseractDetectContours;
-//         //     options.tesseractDemo = tesseractDemo;
-//         //     options.actualTesseractDetect = actualTesseractDetect;
-//         //     options.textDetectDilate = textDetectDilate;
-//         //     options.textDetect1 = textDetect1;
-//         //     options.textDetect2 = textDetect2;
-//         //     double t_r = (double)getTickCount();
-//         //     std::optional<detector::DocumentOCR::OCRResult> result = detector::DocumentOCR::detectTextImpl(warped, warped, options, std::nullopt);
-//         //     cout << "TIME_OCR = " << ((double)getTickCount() - t_r) * 1000 / getTickFrequency() << endl;
-//         //     if (result != std::nullopt)
-//         //     {
-//         //         float scale_img = 600.f / warped.rows;
-//         //         float scale_font = (float)(2 - scale_img) / 1.4f;
-//         //         auto ocrResult = *std::move(result);
-//         //         for (int j = 0; j < ocrResult.blocks.size(); j++)
-//         //         {
-//         //             detector::DocumentOCR::OCRData data = ocrResult.blocks[j];
-//         //             rectangle(warped, data.box.tl(), data.box.br(), Scalar(255, 0, 255), 3);
-//         //             Size word_size = getTextSize(data.text, FONT_HERSHEY_SIMPLEX, (double)scale_font, (int)(3 * scale_font), NULL);
-//         //             rectangle(warped, data.box.tl() - Point(3, word_size.height + 3), data.box.tl() + Point(word_size.width, 0), Scalar(255, 0, 255), -1);
-//         //             putText(warped, data.text, data.box.tl() - Point(1, 1), FONT_HERSHEY_SIMPLEX, scale_font, Scalar(255, 255, 255), (int)(3 * scale_font));
-//         //         }
-//         //     }
-//         //     // detect_text(warped, warped);
-//         // }
-
-//         imshow("Warped", warped);
-//     }
-//     else
-//     {
-//         // destroyWindow("Warped");
-//         // namedWindow("Warped", WINDOW_KEEPRATIO);
-//         // moveWindow("Warped", 900, 100);
-//     }
-// }
-
-
-// Enhanced UI State Manager
-class UIManager {
+class ImageDisplayWidget : public QWidget {
+    Q_OBJECT
 public:
-    enum class ViewMode {
-        SOURCE,
-        EDGES,
-        WARPED,
-        COMPARE
-    };
-    
-    enum class Algorithm {
-        NONE,
-        WHITEPAPER,
-        WHITEPAPER2,
-        WHITEPAPER_FAST,
-        ENHANCE,
-        COLORS
-    };
-    
-    ViewMode currentView = ViewMode::SOURCE;
-    Algorithm selectedAlgorithm = Algorithm::NONE;
-    
-    bool showSourceOverlay = true;
-    bool showEdgesOverlay = false;
-    bool showWarpedOverlay = false;
-    
-    std::map<Algorithm, std::string> algorithmNames = {
-        {Algorithm::NONE, "None"},
-        {Algorithm::WHITEPAPER, "Whitepaper"},
-        {Algorithm::WHITEPAPER2, "Whitepaper 2"},
-        {Algorithm::WHITEPAPER_FAST, "Whitepaper Fast"},
-        {Algorithm::ENHANCE, "Enhance"},
-        {Algorithm::COLORS, "Colors"}
-    };
-    
-    std::map<Algorithm, bool> algorithmEnabled = {
-        {Algorithm::WHITEPAPER, false},
-        {Algorithm::WHITEPAPER2, false},
-        {Algorithm::WHITEPAPER_FAST, false},
-        {Algorithm::ENHANCE, false},
-        {Algorithm::COLORS, false}
-    };
-    
-    void toggleAlgorithm(Algorithm algo) {
-        // Disable all others
-        for (auto& pair : algorithmEnabled) {
-            pair.second = false;
-        }
-        // Enable selected
-        algorithmEnabled[algo] = true;
-        selectedAlgorithm = algo;
+    explicit ImageDisplayWidget(QWidget* parent = nullptr)
+        : QWidget(parent)
+    {
+        setMinimumSize(300, 200);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        setMouseTracking(true);
+        setCursor(Qt::CrossCursor);
     }
-    
-    std::string getStatusText() {
-        std::stringstream ss;
-        ss << "View: ";
-        switch(currentView) {
-            case ViewMode::SOURCE: ss << "Source"; break;
-            case ViewMode::EDGES: ss << "Edges"; break;
-            case ViewMode::WARPED: ss << "Warped"; break;
-            case ViewMode::COMPARE: ss << "Compare"; break;
-        }
-        ss << " | Algorithm: " << algorithmNames[selectedAlgorithm];
-        return ss.str();
+
+    void setImage(const QPixmap& px) {
+        pixmap_  = px;
+        if (!px.isNull() && zoomFit_) fitToWindow();
+        update();
     }
+
+    void fitToWindow() {
+        if (pixmap_.isNull()) return;
+        double sx = (double)width()  / pixmap_.width();
+        double sy = (double)height() / pixmap_.height();
+        zoom_   = std::min(sx, sy);
+        offset_ = QPointF(
+            (width()  - pixmap_.width()  * zoom_) / 2.0,
+            (height() - pixmap_.height() * zoom_) / 2.0);
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        p.fillRect(rect(), QColor(20,20,20));
+        if (pixmap_.isNull()) {
+            p.setPen(QColor(100,100,100));
+            p.drawText(rect(), Qt::AlignCenter, "No image loaded");
+            return;
+        }
+        p.setRenderHint(QPainter::SmoothPixmapTransform, zoom_ < 1.0);
+        int dw = (int)(pixmap_.width()  * zoom_);
+        int dh = (int)(pixmap_.height() * zoom_);
+        p.drawPixmap(QRect((int)offset_.x(),(int)offset_.y(),dw,dh), pixmap_);
+    }
+
+    void resizeEvent(QResizeEvent*) override {
+        if (!pixmap_.isNull() && zoomFit_) fitToWindow();
+    }
+
+    void wheelEvent(QWheelEvent* e) override {
+        if (pixmap_.isNull()) return;
+        double factor = (e->angleDelta().y() > 0) ? 1.15 : (1.0/1.15);
+        QPointF mousePos = e->position();
+        // Zoom around cursor
+        offset_ = mousePos - (mousePos - offset_) * factor;
+        zoom_  *= factor;
+        zoom_   = std::clamp(zoom_, 0.05, 32.0);
+        zoomFit_ = false;
+        update();
+    }
+
+    void mousePressEvent(QMouseEvent* e) override {
+        if (e->button() == Qt::LeftButton) {
+            dragging_    = true;
+            dragStart_   = e->pos();
+            offsetStart_ = offset_;
+            setCursor(Qt::ClosedHandCursor);
+        } else if (e->button() == Qt::MiddleButton || e->button() == Qt::RightButton) {
+            zoomFit_ = true;
+            fitToWindow();
+        }
+    }
+
+    void mouseMoveEvent(QMouseEvent* e) override {
+        if (dragging_) {
+            offset_ = offsetStart_ + QPointF(e->pos() - dragStart_);
+            zoomFit_ = false;
+            update();
+        }
+    }
+
+    void mouseReleaseEvent(QMouseEvent* e) override {
+        if (e->button() == Qt::LeftButton) {
+            dragging_ = false;
+            setCursor(Qt::CrossCursor);
+        }
+    }
+
+    void mouseDoubleClickEvent(QMouseEvent*) override {
+        zoomFit_ = true;
+        fitToWindow();
+    }
+
+private:
+    QPixmap  pixmap_;
+    QPointF  offset_      = {0, 0};
+    double   zoom_        = 1.0;
+    bool     zoomFit_     = true;
+    bool     dragging_    = false;
+    QPoint   dragStart_;
+    QPointF  offsetStart_;
 };
 
+// ============================================================
+//  ParamFormWidget — dynamic form for one pipeline step's params
+// ============================================================
 
+class ParamFormWidget : public QWidget {
+    Q_OBJECT
+signals:
+    void paramChanged(const QString& id, double value);
 
-UIManager uiManager;
+public:
+    explicit ParamFormWidget(QWidget* parent = nullptr) : QWidget(parent) {
+        layout_ = new QFormLayout(this);
+        layout_->setContentsMargins(8,8,8,8);
+        layout_->setSpacing(6);
+        layout_->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    }
 
-// Helper function to get window info
-struct WindowInfo {
-    int width;
-    int height;
-    float dpiScale;
+    void setStep(PipelineStep* step) {
+        step_ = step;
+        rebuild();
+    }
+
+    void clearStep() { step_ = nullptr; rebuild(); }
+
+private:
+    void rebuild() {
+        // Remove all existing rows
+        while (layout_->rowCount() > 0)
+            layout_->removeRow(0);
+
+        if (!step_ || step_->def.params.isEmpty()) {
+            auto* lbl = new QLabel("(no parameters)", this);
+            lbl->setAlignment(Qt::AlignCenter);
+            lbl->setStyleSheet("color: #808080; font-style: italic;");
+            layout_->addRow(lbl);
+            return;
+        }
+
+        for (const auto& p : step_->def.params) {
+            auto* row = new QWidget(this);
+            auto* hl  = new QHBoxLayout(row);
+            hl->setContentsMargins(0,0,0,0); hl->setSpacing(4);
+
+            double curVal = step_->paramValues.value(p.id, p.defaultVal);
+            bool   isInt  = (p.step >= 1.0 &&
+                             std::fmod(p.minVal, 1.0) == 0.0 &&
+                             std::fmod(p.maxVal, 1.0) == 0.0);
+
+            auto* sl = new QSlider(Qt::Horizontal, row);
+            sl->setRange((int)(p.minVal / p.step), (int)(p.maxVal / p.step));
+            sl->setValue((int)(curVal / p.step));
+
+            if (isInt) {
+                auto* spn = new QSpinBox(row);
+                spn->setRange((int)p.minVal, (int)p.maxVal);
+                spn->setValue((int)curVal);
+                spn->setFixedWidth(64);
+
+                QString pid = p.id;
+                PipelineStep* s = step_;
+                connect(sl, &QSlider::valueChanged, this, [this,s,pid,spn,p](int v) {
+                    double val = v * p.step;
+                    s->paramValues[pid] = val;
+                    spn->blockSignals(true); spn->setValue((int)val); spn->blockSignals(false);
+                    emit paramChanged(pid, val);
+                });
+                connect(spn, QOverload<int>::of(&QSpinBox::valueChanged), this,
+                        [this,s,pid,sl,p](int v) {
+                    double val = v;
+                    s->paramValues[pid] = val;
+                    sl->blockSignals(true); sl->setValue((int)(val/p.step)); sl->blockSignals(false);
+                    emit paramChanged(pid, val);
+                });
+                hl->addWidget(sl,1); hl->addWidget(spn);
+            } else {
+                int dec = (p.step < 0.01) ? 3 : (p.step < 0.1) ? 2 : 1;
+                auto* spn = new QDoubleSpinBox(row);
+                spn->setRange(p.minVal, p.maxVal);
+                spn->setSingleStep(p.step);
+                spn->setDecimals(dec);
+                spn->setValue(curVal);
+                spn->setFixedWidth(72);
+
+                QString pid = p.id;
+                PipelineStep* s = step_;
+                connect(sl, &QSlider::valueChanged, this, [this,s,pid,spn,p](int v) {
+                    double val = v * p.step;
+                    s->paramValues[pid] = val;
+                    spn->blockSignals(true); spn->setValue(val); spn->blockSignals(false);
+                    emit paramChanged(pid, val);
+                });
+                connect(spn, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+                        [this,s,pid,sl,p](double v) {
+                    s->paramValues[pid] = v;
+                    sl->blockSignals(true); sl->setValue((int)(v/p.step)); sl->blockSignals(false);
+                    emit paramChanged(pid, v);
+                });
+                hl->addWidget(sl,1); hl->addWidget(spn);
+            }
+            layout_->addRow(p.label, row);
+        }
+    }
+
+    QFormLayout*  layout_;
+    PipelineStep* step_ = nullptr;
 };
 
+// ============================================================
+//  AlgorithmPipelineWidget — stack list + param panel
+// ============================================================
 
-WindowInfo getWindowInfo(const std::string& windowName) {
-    WindowInfo info;
-    
-    // Try to get window from Qt
-    QWidget* window = nullptr;
-    for (QWidget* widget : QApplication::topLevelWidgets()) {
-        if (widget->windowTitle().toStdString() == windowName) {
-            window = widget;
-            break;
-        }
-    }
-    
-    if (window) {
-        // Get actual window size from Qt widget
-        info.width = window->width();
-        info.height = window->height();
-    } else {
-        // Fallback to OpenCV method
-        auto rect = cv::getWindowImageRect(windowName);
-        info.width = rect.width > 0 ? rect.width : 1200;
-        info.height = rect.height > 0 ? rect.height : 800;
-    }
-    
-    // Get DPI scale from Qt
-    info.dpiScale = 1.0f;
-    if (QApplication::primaryScreen()) {
-        info.dpiScale = QApplication::primaryScreen()->devicePixelRatio();
-    }
-    
-    return info;
-}
+class AlgorithmPipelineWidget : public QWidget {
+    Q_OBJECT
+signals:
+    void pipelineChanged();
 
-void renderUI() {
-    // Get actual window dimensions and DPI
-    WindowInfo winInfo = getWindowInfo("Document Scanner Test");
-    
-    // Reserve space for UI elements
-    const int statusHeight = 60 * winInfo.dpiScale;
-    const int helpHeight = 40 * winInfo.dpiScale;
-    const int totalUIHeight = statusHeight + helpHeight;
-    
-    // Available space for image
-    const int availableWidth = winInfo.width;
-    const int availableHeight = winInfo.height - totalUIHeight;
-    
-    // Get the display image based on current view
-    Mat display;
-    
-    switch(uiManager.currentView) {
-        case UIManager::ViewMode::SOURCE:
-            // Use original image instead of resizedImage for better quality
-            display = image.clone();
-            break;
-        case UIManager::ViewMode::EDGES:
-            // Scale edges back to original image size for display
-            if (!edged.empty()) {
-                Mat edgedDisplay;
-                if (edged.channels() == 1) {
-                    cvtColor(edged, edgedDisplay, COLOR_GRAY2BGR);
-                } else {
-                    edgedDisplay = edged.clone();
-                }
-                // Scale to original image size
-                double scaleBack = (double)image.rows / resizedImage.rows;
-                resize(edgedDisplay, display, Size(), scaleBack, scaleBack, INTER_LINEAR);
-            } else {
-                display = image.clone();
-            }
-            break;
-        case UIManager::ViewMode::WARPED:
-            if (!warped.empty()) {
-                display = warped.clone();
-            } else {
-                display = Mat::zeros(availableHeight, availableWidth, CV_8UC3);
-                putText(display, "No warped image available", 
-                       Point(200, 300), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 2);
-            }
-            break;
-        case UIManager::ViewMode::COMPARE: {
-            // Side by side comparison using original image
-            Mat left = image.clone();
-            Mat right = warped.empty() ? Mat::zeros(image.size(), CV_8UC3) : warped.clone();
-            
-            // Resize to same height
-            if (right.rows != left.rows) {
-                double scale = (double)left.rows / right.rows;
-                resize(right, right, Size(right.cols * scale, left.rows));
-            }
-            
-            display = Mat(left.rows, left.cols + right.cols + 10, CV_8UC3, Scalar(0, 0, 0));
-            left.copyTo(display(Rect(0, 0, left.cols, left.rows)));
-            right.copyTo(display(Rect(left.cols + 10, 0, right.cols, right.rows)));
-            
-            // Draw separator
-            line(display, Point(left.cols + 5, 0), Point(left.cols + 5, display.rows), 
-                 Scalar(255, 255, 255), 2);
-            break;
-        }
-    }
-    
-    // Scale image to fit available space while maintaining aspect ratio
-    Mat scaledDisplay;
-    if (!display.empty()) {
-        double scaleX = (double)availableWidth / display.cols;
-        double scaleY = (double)availableHeight / display.rows;
-        double displayScale = std::min(scaleX, scaleY);
-        
-        if (displayScale != 1.0) {
-            int newWidth = (int)(display.cols * displayScale);
-            int newHeight = (int)(display.rows * displayScale);
-            resize(display, scaledDisplay, Size(newWidth, newHeight), 0, 0, INTER_LINEAR);
-        } else {
-            scaledDisplay = display;
-        }
-    } else {
-        scaledDisplay = Mat::zeros(availableHeight, availableWidth, CV_8UC3);
-    }
-    
-    // Center the image in available space
-    Mat imageArea = Mat::zeros(availableHeight, availableWidth, CV_8UC3);
-    int xOffset = (availableWidth - scaledDisplay.cols) / 2;
-    int yOffset = (availableHeight - scaledDisplay.rows) / 2;
-    if (xOffset >= 0 && yOffset >= 0) {
-        scaledDisplay.copyTo(imageArea(Rect(xOffset, yOffset, scaledDisplay.cols, scaledDisplay.rows)));
-    } else {
-        scaledDisplay.copyTo(imageArea);
-    }
-    
-    // Create status bar at full window width
-    Mat statusBar(statusHeight, availableWidth, CV_8UC3, Scalar(40, 40, 40));
-    
-    // Scale UI elements based on DPI
-    float fontScale = 0.7f * winInfo.dpiScale;
-    int thickness = std::max(1, (int)(2 * winInfo.dpiScale));
-    
-    std::string statusText = uiManager.getStatusText();
-    putText(statusBar, statusText, Point(15 * winInfo.dpiScale, 32 * winInfo.dpiScale), 
-            FONT_HERSHEY_SIMPLEX, fontScale, Scalar(255, 255, 255), thickness, LINE_AA);
-    
-    // Add algorithm buttons
-    int btnWidth = 80 * winInfo.dpiScale;
-    int btnHeight = 40 * winInfo.dpiScale;
-    int btnSpacing = 5 * winInfo.dpiScale;
-    int btnY = (statusHeight - btnHeight) / 2;
-    int totalButtonWidth = 6 * (btnWidth + btnSpacing);
-    int btnX = availableWidth - totalButtonWidth - 15 * winInfo.dpiScale;
-    
-    for (int i = 0; i < 6; i++) {
-        UIManager::Algorithm algo = static_cast<UIManager::Algorithm>(i);
-        bool isActive = uiManager.algorithmEnabled[algo];
-        Scalar btnColor = isActive ? Scalar(0, 200, 0) : Scalar(80, 80, 80);
-        Scalar textColor = isActive ? Scalar(255, 255, 255) : Scalar(180, 180, 180);
-        
-        int x = btnX + i * (btnWidth + btnSpacing);
-        rectangle(statusBar, Point(x, btnY), Point(x + btnWidth, btnY + btnHeight), btnColor, -1);
-        rectangle(statusBar, Point(x, btnY), Point(x + btnWidth, btnY + btnHeight), 
-                 Scalar(200, 200, 200), std::max(1, (int)winInfo.dpiScale), LINE_AA);
-        
-        std::string shortName = uiManager.algorithmNames[algo];
-        if (shortName.length() > 7) shortName = shortName.substr(0, 7);
-        
-        float btnFontScale = 0.4f * winInfo.dpiScale;
-        int baseline = 0;
-        Size textSize = getTextSize(shortName, FONT_HERSHEY_SIMPLEX, btnFontScale, 1, &baseline);
-        Point textOrg(x + (btnWidth - textSize.width) / 2, btnY + (btnHeight + textSize.height) / 2);
-        
-        putText(statusBar, shortName, textOrg, 
-                FONT_HERSHEY_SIMPLEX, btnFontScale, textColor, 1, LINE_AA);
-    }
-    
-    // Create help bar at full window width
-    Mat helpBar(helpHeight, availableWidth, CV_8UC3, Scalar(30, 30, 30));
-    std::string helpText = "Keys: [1-4] Views | [Q-Y] Algorithms | [N]ext/[P]rev Image | [Space] Settings | [ESC] Exit";
-    float helpFontScale = 0.5f * winInfo.dpiScale;
-    putText(helpBar, helpText, Point(15 * winInfo.dpiScale, 23 * winInfo.dpiScale), 
-            FONT_HERSHEY_SIMPLEX, helpFontScale, Scalar(200, 200, 200), 1, LINE_AA);
-    
-    // Combine all elements into final window-sized image
-    Mat final(winInfo.height, availableWidth, CV_8UC3, Scalar(0, 0, 0));
-    imageArea.copyTo(final(Rect(0, 0, availableWidth, availableHeight)));
-    statusBar.copyTo(final(Rect(0, availableHeight, availableWidth, statusHeight)));
-    helpBar.copyTo(final(Rect(0, availableHeight + statusHeight, availableWidth, helpHeight)));
-    
-    imshow("Document Scanner Test", final);
-}
+public:
+    explicit AlgorithmPipelineWidget(const QVector<AlgoDef>& catalog,
+                                     const QVector<PipelinePreset>& presets,
+                                     QWidget* parent = nullptr)
+        : QWidget(parent), catalog_(catalog), presets_(presets)
+    {
+        auto* mainVl = new QVBoxLayout(this);
+        mainVl->setContentsMargins(0,0,0,0);
+        mainVl->setSpacing(0);
 
-void updateImage()
-{
-    if (!canUpdateImage) {
-        return;
-    }
-    
-    // Update detector options
-    docDetector.options.cannyFactor = cannyFactor / 100.0;
-    docDetector.options.dilateAnchorSize = dilateAnchorSize;
-    docDetector.options.houghLinesThreshold = houghLinesThreshold;
-    docDetector.options.houghLinesMinLineLength = houghLinesMinLineLength;
-    docDetector.options.houghLinesMaxLineGap = houghLinesMaxLineGap;
-    docDetector.options.morphologyAnchorSize = morphologyAnchorSize;
-    docDetector.options.useChannel = useChannel - 1;
-    docDetector.options.bilateralFilterValue = bilateralFilterValue;
-    docDetector.options.thresh = thresh;
-    docDetector.options.threshMax = threshMax;
-    docDetector.options.contoursApproxEpsilonFactor = contoursApproxEpsilonFactor / 1000.0;
-    
-    if (medianBlurValue > 0 && medianBlurValue % 2 == 0) {
-        docDetector.options.medianBlurValue = medianBlurValue + 1;
-    } else {
-        docDetector.options.medianBlurValue = medianBlurValue;
-    }
-    
-    docDetector.image = image;
-    resizedImage = docDetector.resizeImageMax();
+        // ---- Top: pipeline list ----
+        auto* listGb = new QGroupBox("Algorithm Pipeline", this);
+        auto* listVl = new QVBoxLayout(listGb);
+        listVl->setContentsMargins(4,6,4,4);
+        listVl->setSpacing(6);
 
-    detector::DocumentDetector::PageSplitResult split = docDetector.detectGutterAndSplit(resizedImage, 0.4f);
-
-    vector<vector<cv::Point>> pointsList;
-    
-    if (split.foundGutter) {
-        Mat combinedEdged = Mat::zeros(resizedImage.size(), CV_8U);
-        auto scanAndMerge = [&](const Rect &r) {
-            if (r.width <= 0 || r.height <= 0) return;
-            Mat subImg = resizedImage(r);
-            Mat subEdged;
-            vector<vector<Point>> subList = docDetector.scanPoint(subEdged, subImg, true);
-            
-            if (!subEdged.empty()) {
-                if (subEdged.type() != combinedEdged.type()) 
-                    cv::cvtColor(subEdged, subEdged, COLOR_BGR2GRAY);
-                subEdged.copyTo(combinedEdged(r));
-            }
-            
-            double scaleFactor = docDetector.resizeScale * docDetector.scale;
-            Point offset(static_cast<int>(r.x * scaleFactor), static_cast<int>(r.y * scaleFactor));
-            for (auto &contour : subList) {
-                for (auto &pt : contour) {
-                    pt += offset;
-                }
-                pointsList.push_back(contour);
-            }
-        };
-
-        if (split.hasLeft) scanAndMerge(split.leftPage);
-        if (split.hasRight) scanAndMerge(split.rightPage);
-
-        if (pointsList.empty()) {
-            pointsList = docDetector.scanPoint(edged, resizedImage, true);
-        } else {
-            edged = combinedEdged;
-        }
-    } else {
-        pointsList = docDetector.scanPoint(edged, resizedImage, true);
-    }
- 
-    if (pointsList.size() == 0) {
-        vector<cv::Point> points;
-        points.push_back(cv::Point(0, 0));
-        points.push_back(cv::Point(image.cols, 0));
-        points.push_back(cv::Point(image.cols, image.rows));
-        points.push_back(cv::Point(0, image.rows));
-        pointsList.push_back(points);
-    }
-
-    if (pointsList.size() > 0) {
-        warped = cropAndWarp(image, pointsList[0]);
-        
-        // Apply selected algorithm
-        if (uiManager.algorithmEnabled[UIManager::Algorithm::WHITEPAPER]) {
-            string s;
-            encode_json(whitepaperOptions, s, jsoncons::indenting::no_indent);
-            detector::DocumentDetector::applyTransforms(warped, "whitepaper_" + s);
-        }
-        else if (uiManager.algorithmEnabled[UIManager::Algorithm::WHITEPAPER2]) {
-            string s;
-            encode_json(whitepaperOptions, s, jsoncons::indenting::no_indent);
-            detector::DocumentDetector::applyTransforms(warped, "whitepaper2_" + s);
-        }
-        else if (uiManager.algorithmEnabled[UIManager::Algorithm::ENHANCE]) {
-            detector::DocumentDetector::applyTransforms(warped, "enhance");
-        }
-        else if (uiManager.algorithmEnabled[UIManager::Algorithm::COLORS]) {
-            std::vector<std::pair<Vec3b, float>> colors = colorSimplificationTransform(
-                warped, warped, false, colorsResizeThreshold, colorsFilterDistanceThreshold, 
-                distanceThreshold, paletteNbColors, (ColorSpace)(colorSpace), (ColorSpace)(paletteColorSpace));
-            
-            for (int index = 0; index < colors.size(); ++index) {
-                auto color = colors.at(index).first;
-                auto rbgColor = ColorSpaceToBGR(color, (ColorSpace)(colorSpace));
-                rectangle(warped, cv::Rect(index * 60, 0, 60, 60), 
-                         Scalar(rbgColor(0), rbgColor(1), rbgColor(2)), -1);
-            }
-        }
-    } else {
-        warped = Mat();
-    }
-    
-    renderUI();
-}
-
-void updateSourceImage()
-{
-    image = imread(images[imageIndex]);
-    updateImage();
-}
-
-void on_trackbar(int, void *)
-{
-    updateImage();
-}
-
-void on_double_trackbar(double)
-{
-    updateImage();
-}
-
-void on_trackbar_image(int, void *)
-{
-    updateSourceImage();
-}
-
-JSONCONS_N_MEMBER_TRAITS(WhitePaperTransformOptions, 0, csBlackPer, csWhitePer, gaussKSize, gaussSigma, gammaValue, cbBlackPer, cbWhitePer, dogKSize, dogSigma2);
-
-bool settingsVisible = true;
-
-void createSettingsWindow() {
-    // destroyWindow("Settings");
-    namedWindow("Settings", WINDOW_NORMAL | WINDOW_KEEPRATIO);
-    resizeWindow("Settings", 350, 900);
-    moveWindow("Settings", 50, 50);
-    
-    // === NAVIGATION ===
-    createTrackbar("Image Index", "Settings", &imageIndex, images.size() - 1, on_trackbar_image);
-    
-    // === DETECTION SETTINGS ===
-    createTrackbar("--- DETECTION ---", "Settings", nullptr, 1, nullptr);
-    createTrackbar("Use Channel", "Settings", &useChannel, 3, on_trackbar);
-    createTrackbar("Canny Factor", "Settings", &cannyFactor, 400, on_trackbar);
-    createTrackbar("Morphology", "Settings", &morphologyAnchorSize, 20, on_trackbar);
-    createTrackbar("Dilate", "Settings", &dilateAnchorSize, 20, on_trackbar);
-    createTrackbar("Thresh", "Settings", &thresh, 300, on_trackbar);
-    createTrackbar("Thresh Max", "Settings", &threshMax, 300, on_trackbar);
-    createTrackbar("Contours Eps", "Settings", &contoursApproxEpsilonFactor, 100, on_trackbar);
-    
-    // === PREPROCESSING ===
-    createTrackbar("--- PREPROCESS ---", "Settings", nullptr, 1, nullptr);
-    createTrackbar("Bilateral", "Settings", &bilateralFilterValue, 200, on_trackbar);
-    createTrackbar("Median Blur", "Settings", &medianBlurValue, 200, on_trackbar);
-    
-    // === HOUGH LINES ===
-    createTrackbar("--- HOUGH LINES ---", "Settings", nullptr, 1, nullptr);
-    createTrackbar("Threshold", "Settings", &houghLinesThreshold, 500, on_trackbar);
-    createTrackbar("Min Length", "Settings", &houghLinesMinLineLength, 500, on_trackbar);
-    createTrackbar("Max Gap", "Settings", &houghLinesMaxLineGap, 500, on_trackbar);
-    
-    // === WHITEPAPER OPTIONS ===
-    createTrackbar("--- WHITEPAPER ---", "Settings", nullptr, 1, nullptr);
-    createTrackbar("dogKSize", "Settings", &whitepaperOptions.dogKSize, 100, on_trackbar);
-    createTrackbar("dogSigma1", "Settings", &whitepaperOptions.dogSigma1, 200, on_trackbar);
-    createTrackbar("dogSigma2", "Settings", &whitepaperOptions.dogSigma2, 100, on_trackbar);
-    createTrackbar("csBlackPer", "Settings", &whitepaperOptions.csBlackPer, 100, on_trackbar);
-    // createTrackbar("csWhitePer", "Settings", &whitepaperOptions.csWhitePer, 100, on_trackbar);
-    createTrackbar("gaussKSize", "Settings", &whitepaperOptions.gaussKSize, 100, on_trackbar);
-    // createTrackbar("gaussSigma", "Settings", &whitepaperOptions.gaussSigma, 100, on_trackbar);
-    // createTrackbar("gammaValue", "Settings", &whitepaperOptions.gammaValue, 100, on_trackbar);
-    
-    // === COLORS OPTIONS ===
-    createTrackbar("--- COLORS ---", "Settings", nullptr, 1, nullptr);
-    createTrackbar("Resize Thresh", "Settings", &colorsResizeThreshold, 500, on_trackbar);
-    createTrackbar("Filter Dist", "Settings", &colorsFilterDistanceThreshold, 100, on_trackbar);
-    createTrackbar("Distance", "Settings", &distanceThreshold, 100, on_trackbar);
-    createTrackbar("Nb Colors", "Settings", &paletteNbColors, 20, on_trackbar);
-    createTrackbar("Color Space", "Settings", &colorSpace, 5, on_trackbar);
-    createTrackbar("Palette Space", "Settings", &paletteColorSpace, 5, on_trackbar);
-}
-
-void handleKeyPress(int key) {
-    switch(key) {
-        // View modes
-        case '1':
-            uiManager.currentView = UIManager::ViewMode::SOURCE;
-            renderUI();
-            break;
-        case '2':
-            uiManager.currentView = UIManager::ViewMode::EDGES;
-            renderUI();
-            break;
-        case '3':
-            uiManager.currentView = UIManager::ViewMode::WARPED;
-            renderUI();
-            break;
-        case '4':
-            uiManager.currentView = UIManager::ViewMode::COMPARE;
-            renderUI();
-            break;
-            
-        // Algorithms
-        case 'q':
-        case 'Q':
-            uiManager.toggleAlgorithm(UIManager::Algorithm::NONE);
-            updateImage();
-            break;
-        case 'w':
-        case 'W':
-            uiManager.toggleAlgorithm(UIManager::Algorithm::WHITEPAPER);
-            updateImage();
-            break;
-        case 'e':
-        case 'E':
-            uiManager.toggleAlgorithm(UIManager::Algorithm::WHITEPAPER2);
-            updateImage();
-            break;
-        case 'r':
-        case 'R':
-            uiManager.toggleAlgorithm(UIManager::Algorithm::WHITEPAPER_FAST);
-            updateImage();
-            break;
-        case 't':
-        case 'T':
-            uiManager.toggleAlgorithm(UIManager::Algorithm::ENHANCE);
-            updateImage();
-            break;
-        case 'y':
-        case 'Y':
-            uiManager.toggleAlgorithm(UIManager::Algorithm::COLORS);
-            updateImage();
-            break;
-            
-        // Navigation
-        case 'n':
-        case 'N':
-            imageIndex = (imageIndex + 1) % images.size();
-            setTrackbarPos("Image Index", "Settings", imageIndex);
-            updateSourceImage();
-            break;
-        case 'p':
-        case 'P':
-            imageIndex = (imageIndex - 1 + images.size()) % images.size();
-            setTrackbarPos("Image Index", "Settings", imageIndex);
-            updateSourceImage();
-            break;
-            
-        // Settings toggle
-        case ' ':
-            settingsVisible = !settingsVisible;
-            if (settingsVisible) {
-                createSettingsWindow();
-            } else {
-                destroyWindow("Settings");
-            }
-            break;
-    }
-}
-
-int main(int argc, char **argv)
-{
-    // Enable high DPI scaling BEFORE creating QApplication
-    QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-    QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
-    
-    // Initialize Qt application for proper DPI handling
-    QApplication app(argc, argv);
-
-    printf("OpenCV: %s\n", cv::getBuildInformation().c_str());
-    
-    if (argc < 2) {
-        cout << "Usage: ./scanner [test_images_dir_path] [optional: start_image_name]\n";
-        return 1;
-    }
-    
-    const char *dirPath = argv[1];
-    const char *startImage = argc > 2 ? argv[2] : nullptr;
-
-    setImagesFromFolder(dirPath);
-    if (images.empty()) {
-        cerr << "No images found in directory: " << dirPath << endl;
-        return 1;
-    }
-    
-    if (startImage) {
-        auto ret = std::find_if(images.begin(), images.end(), [startImage](string filePath) {
-            return filePath.find(startImage) != std::string::npos;
+        // ── Preset selector row ──
+        auto* presetRow = new QWidget(listGb);
+        auto* presetHl  = new QHBoxLayout(presetRow);
+        presetHl->setContentsMargins(0,0,0,0); presetHl->setSpacing(4);
+        auto* modeLbl = new QLabel("Mode:", presetRow);
+        modeLbl->setFixedWidth(40);
+        modeLbl->setStyleSheet("color: #A0A0A0; font-size: 11px;");
+        presetCombo_ = new QComboBox(presetRow);
+        presetCombo_->addItem("(custom — no preset)");
+        for (const auto& pr : presets_)
+            presetCombo_->addItem(pr.name);
+        presetCombo_->setToolTip("Select a mode preset to load a predefined pipeline");
+        auto* loadBtn = new QPushButton("▶ Load", presetRow);
+        loadBtn->setFixedWidth(64);
+        loadBtn->setToolTip("Load selected preset — replaces the current pipeline");
+        loadBtn->setStyleSheet("QPushButton { background:#1A5A1A; border-color:#2A8A2A; }"
+                               "QPushButton:hover { background:#216121; }");
+        connect(loadBtn, &QPushButton::clicked, this, [this]{
+            onLoadPreset(presetCombo_->currentIndex());
         });
-        if (ret != images.end()) {
-            imageIndex = ret - images.begin();
-        }
-    }
-    
-    // Create main window
-    namedWindow("Document Scanner Test", WINDOW_NORMAL | WINDOW_KEEPRATIO | WINDOW_GUI_EXPANDED);
-    resizeWindow("Document Scanner Test", 1400, 900);
-    
-    // Get DPI info
-    if (QApplication::primaryScreen()) {
-        float dpi = QApplication::primaryScreen()->logicalDotsPerInch();
-        float scale = QApplication::primaryScreen()->devicePixelRatio();
-        cout << "Display DPI: " << dpi << ", Scale Factor: " << scale << endl;
-    }
-    
-    // Create settings window
-    createSettingsWindow();
-    
-    canUpdateImage = true;
-    image = imread(images[imageIndex]);
-    updateImage();
+        presetHl->addWidget(modeLbl);
+        presetHl->addWidget(presetCombo_, 1);
+        presetHl->addWidget(loadBtn);
+        listVl->addWidget(presetRow);
 
-    cout << "\n=== Document Scanner Test Interface ===\n";
-    cout << "View Modes:\n";
-    cout << "  [1] Source Image\n";
-    cout << "  [2] Edge Detection\n";
-    cout << "  [3] Warped Result\n";
-    cout << "  [4] Side-by-Side Compare\n\n";
-    cout << "Algorithms:\n";
-    cout << "  [Q] None\n";
-    cout << "  [W] Whitepaper\n";
-    cout << "  [E] Whitepaper 2\n";
-    cout << "  [R] Whitepaper Fast\n";
-    cout << "  [T] Enhance\n";
-    cout << "  [Y] Colors\n\n";
-    cout << "Navigation:\n";
-    cout << "  [N] Next Image\n";
-    cout << "  [P] Previous Image\n";
-    cout << "  [Space] Toggle Settings\n";
-    cout << "  [ESC] Exit\n\n";
+        // ── Preset description label ──
+        descLabel_ = new QLabel(listGb);
+        descLabel_->setWordWrap(true);
+        descLabel_->setStyleSheet(
+            "color: #909090; font-size: 10px; font-style: italic;"
+            "background: #1E2A1E; border: 1px solid #2A4A2A;"
+            "border-radius: 3px; padding: 4px 6px;");
+        descLabel_->setMinimumHeight(54);
+        descLabel_->setMaximumHeight(80);
+        descLabel_->setText("Select a mode above and press ▶ Load,\n"
+                            "or build a custom pipeline with ＋ Add Step.");
+        listVl->addWidget(descLabel_);
 
-    // Track window for resize detection
-    QWidget* mainWindow = nullptr;
-    static int lastWidth = 0, lastHeight = 0;
-    
-    // Timer to check for window resize
-    QTimer resizeTimer;
-    resizeTimer.setInterval(100);
-    QObject::connect(&resizeTimer, &QTimer::timeout, [&]() {
-        if (!mainWindow) {
-            for (QWidget* widget : QApplication::topLevelWidgets()) {
-                if (widget->windowTitle() == "Document Scanner Test") {
-                    mainWindow = widget;
+        // Update description when combo changes
+        connect(presetCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [this](int idx) {
+            if (idx <= 0 || idx > (int)presets_.size()) {
+                descLabel_->setText("Select a mode above and press ▶ Load,\n"
+                                    "or build a custom pipeline with ＋ Add Step.");
+            } else {
+                descLabel_->setText(presets_[idx-1].description);
+            }
+        });
+
+        // Separator line
+        auto* sep = new QFrame(listGb);
+        sep->setFrameShape(QFrame::HLine);
+        sep->setStyleSheet("color: #444444;");
+        listVl->addWidget(sep);
+
+        // ── Add Step + Clear buttons ──
+        auto* addClearRow = new QWidget(listGb);
+        auto* addClearHl  = new QHBoxLayout(addClearRow);
+        addClearHl->setContentsMargins(0,0,0,0); addClearHl->setSpacing(4);
+        auto* addBtn = new QPushButton("＋ Add Step", addClearRow);
+        addBtn->setToolTip("Add a processing step to the pipeline");
+        connect(addBtn, &QPushButton::clicked, this, &AlgorithmPipelineWidget::onAddStep);
+        auto* clearBtn = new QPushButton("🗑 Clear", addClearRow);
+        clearBtn->setToolTip("Remove all pipeline steps");
+        clearBtn->setFixedWidth(72);
+        clearBtn->setStyleSheet("QPushButton { background:#3A1A1A; border-color:#6A2A2A; }"
+                                "QPushButton:hover { background:#4A2020; }");
+        connect(clearBtn, &QPushButton::clicked, this, [this]{
+            pipeline_.clear();
+            rebuildList();
+            paramForm_->clearStep();
+            presetCombo_->setCurrentIndex(0);
+            emit pipelineChanged();
+        });
+        addClearHl->addWidget(addBtn, 1);
+        addClearHl->addWidget(clearBtn);
+        listVl->addWidget(addClearRow);
+
+        listWidget_ = new QListWidget(listGb);
+        listWidget_->setDragDropMode(QAbstractItemView::InternalMove);
+        listWidget_->setSelectionMode(QAbstractItemView::SingleSelection);
+        listWidget_->setMinimumHeight(80);
+        connect(listWidget_, &QListWidget::currentRowChanged,
+                this, &AlgorithmPipelineWidget::onSelectionChanged);
+        // itemChanged — connected ONCE here (never in addListRow) to avoid
+        // duplicate connections accumulating on every rebuildList() call.
+        connect(listWidget_, &QListWidget::itemChanged,
+                this, &AlgorithmPipelineWidget::onItemChanged);
+        // Reorder via drag-and-drop
+        connect(listWidget_->model(), &QAbstractItemModel::rowsMoved,
+                this, [this](auto,int,int,auto,int){
+                    syncPipelineFromList();
+                    emit pipelineChanged();
+                });
+        listVl->addWidget(listWidget_, 1);
+
+        // Up / Down / Remove row
+        auto* ctrlRow = new QWidget(listGb);
+        auto* ctrlHl  = new QHBoxLayout(ctrlRow);
+        ctrlHl->setContentsMargins(0,0,0,0); ctrlHl->setSpacing(4);
+        auto* upBtn  = new QPushButton("▲", ctrlRow);
+        auto* dnBtn  = new QPushButton("▼", ctrlRow);
+        auto* rmBtn  = new QPushButton("✕ Remove", ctrlRow);
+        upBtn->setFixedWidth(30); dnBtn->setFixedWidth(30);
+        upBtn->setToolTip("Move step up");
+        dnBtn->setToolTip("Move step down");
+        rmBtn->setToolTip("Remove selected step");
+        connect(upBtn, &QPushButton::clicked, this, &AlgorithmPipelineWidget::onMoveUp);
+        connect(dnBtn, &QPushButton::clicked, this, &AlgorithmPipelineWidget::onMoveDown);
+        connect(rmBtn, &QPushButton::clicked, this, &AlgorithmPipelineWidget::onRemove);
+        ctrlHl->addWidget(upBtn);
+        ctrlHl->addWidget(dnBtn);
+        ctrlHl->addStretch();
+        ctrlHl->addWidget(rmBtn);
+        listVl->addWidget(ctrlRow);
+
+        mainVl->addWidget(listGb, 1);
+
+        // ---- Bottom: param editor ----
+        auto* paramGb = new QGroupBox("Parameters", this);
+        auto* paramVl = new QVBoxLayout(paramGb);
+        paramVl->setContentsMargins(0,0,0,0);
+
+        auto* scroll = new QScrollArea(paramGb);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameStyle(QFrame::NoFrame);
+        paramForm_ = new ParamFormWidget(scroll);
+        scroll->setWidget(paramForm_);
+        paramVl->addWidget(scroll);
+        connect(paramForm_, &ParamFormWidget::paramChanged,
+                this, [this](const QString&, double){ emit pipelineChanged(); });
+
+        mainVl->addWidget(paramGb, 1);
+    }
+
+    const QVector<PipelineStep>& pipeline() const { return pipeline_; }
+
+    /**
+     * Update per-step timing labels shown in the pipeline list.
+     * @p timings must have one entry per pipeline step (in pipeline order);
+     *   a value of -1 means "step was skipped / disabled".
+     */
+    void updateStepTimings(const QVector<long long>& timings) {
+        for (int i = 0; i < (int)pipeline_.size() && i < timings.size(); ++i)
+            pipeline_[i].lastMs = timings[i];
+        // Refresh display text for all visible items
+        listWidget_->blockSignals(true);
+        for (int i = 0; i < listWidget_->count() && i < (int)pipeline_.size(); ++i)
+            updateItemText(listWidget_->item(i), pipeline_[i]);
+        listWidget_->blockSignals(false);
+    }
+
+    /** Load a preset by its 0-based index in presets_. */
+    void loadPresetByIndex(int idx) {
+        if (idx < 0 || idx >= (int)presets_.size()) return;
+        const PipelinePreset& pr = presets_[idx];
+
+        pipeline_.clear();
+        for (const auto& [algoId, overrides] : pr.steps) {
+            // Find AlgoDef in catalog
+            for (const auto& def : catalog_) {
+                if (def.id == algoId) {
+                    PipelineStep step = makeStep(def);
+                    // Apply overrides
+                    for (auto it = overrides.begin(); it != overrides.end(); ++it)
+                        step.paramValues[it.key()] = it.value();
+                    pipeline_.push_back(step);
                     break;
                 }
             }
         }
-        
-        if (mainWindow) {
-            int currentWidth = mainWindow->width();
-            int currentHeight = mainWindow->height();
-            
-            if (currentWidth != lastWidth || currentHeight != lastHeight) {
-                lastWidth = currentWidth;
-                lastHeight = currentHeight;
-                if (lastWidth > 0 && lastHeight > 0) {
-                    renderUI();
-                }
-            }
-        }
-    });
-    resizeTimer.start();
 
-    int k;
-    while (true) {
-        k = waitKey(30);
-        if (k == 27) { // ESC
-            break;
-        } else if (k != -1) {
-            handleKeyPress(k);
-        }
-        
-        // Process Qt events to handle window operations
-        QApplication::processEvents();
+        rebuildList();
+        if (!pipeline_.empty())
+            listWidget_->setCurrentRow(0);
+
+        // Update combo + description (block signals to avoid re-entry)
+        presetCombo_->blockSignals(true);
+        presetCombo_->setCurrentIndex(idx + 1); // +1 because index 0 = "(custom)"
+        presetCombo_->blockSignals(false);
+        descLabel_->setText(pr.description);
+
+        emit pipelineChanged();
     }
 
-    return 0;
+    /** Clear all pipeline steps (e.g. called from a menu action). */
+    void clearPipeline() {
+        pipeline_.clear();
+        rebuildList();
+        if (paramForm_) paramForm_->clearStep();
+        presetCombo_->setCurrentIndex(0);
+        emit pipelineChanged();
+    }
+
+private slots:
+    void onLoadPreset(int comboIdx) {
+        // comboIdx 0 = "(custom)", 1..N = preset idx 0..N-1
+        if (comboIdx <= 0) return;
+        loadPresetByIndex(comboIdx - 1);
+    }
+
+    void onAddStep() {
+        QMenu menu(this);
+        for (const auto& def : catalog_) {
+            QAction* act = menu.addAction(def.name);
+            act->setData(def.id);
+        }
+        QAction* chosen = menu.exec(QCursor::pos());
+        if (!chosen) return;
+        QString id = chosen->data().toString();
+        for (const auto& def : catalog_) {
+            if (def.id == id) {
+                pipeline_.push_back(makeStep(def));
+                addListRow(pipeline_.back(), (int)pipeline_.size() - 1);
+                presetCombo_->setCurrentIndex(0); // mark as custom
+                emit pipelineChanged();
+                listWidget_->setCurrentRow(listWidget_->count() - 1);
+                break;
+            }
+        }
+    }
+
+    void onSelectionChanged(int row) {
+        if (row < 0 || row >= (int)pipeline_.size()) {
+            paramForm_->clearStep();
+            return;
+        }
+        paramForm_->setStep(&pipeline_[row]);
+    }
+
+    void onMoveUp() {
+        int row = listWidget_->currentRow();
+        if (row <= 0) return;
+        std::swap(pipeline_[row], pipeline_[row-1]);
+        rebuildList();
+        listWidget_->setCurrentRow(row - 1);
+        emit pipelineChanged();
+    }
+
+    void onMoveDown() {
+        int row = listWidget_->currentRow();
+        if (row < 0 || row >= (int)pipeline_.size()-1) return;
+        std::swap(pipeline_[row], pipeline_[row+1]);
+        rebuildList();
+        listWidget_->setCurrentRow(row + 1);
+        emit pipelineChanged();
+    }
+
+    void onRemove() {
+        int row = listWidget_->currentRow();
+        if (row < 0 || row >= (int)pipeline_.size()) return;
+        pipeline_.remove(row);
+        rebuildList();
+        emit pipelineChanged();
+    }
+
+private:
+    void addListRow(const PipelineStep& step, int idx) {
+        auto* item = new QListWidgetItem(listWidget_);
+        updateItemText(item, step);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(step.enabled ? Qt::Checked : Qt::Unchecked);
+        item->setData(Qt::UserRole, idx);
+    }
+
+    void updateItemText(QListWidgetItem* item, const PipelineStep& step) {
+        // Use plain ASCII prefixes ("-> ", "(!) ") rather than Unicode arrows to
+        // avoid rendering gaps on Linux systems that lack a full Unicode symbol font.
+        QString prefix = step.def.implemented ? "-> " : "(!) ";
+        QString text = prefix + step.def.name;
+        if (step.enabled && step.def.implemented && step.lastMs >= 0)
+            text += QString("  [%1 ms]").arg(step.lastMs);
+        item->setText(text);
+        if (!step.def.implemented)
+            item->setForeground(QColor(150,150,80));
+        else
+            item->setForeground(QColor(220,220,220));
+    }
+
+    void rebuildList() {
+        listWidget_->blockSignals(true);
+        listWidget_->clear();
+        for (int i = 0; i < (int)pipeline_.size(); ++i)
+            addListRow(pipeline_[i], i);
+        listWidget_->blockSignals(false);
+    }
+
+    void syncPipelineFromList() {
+        QVector<PipelineStep> newPipeline;
+        newPipeline.reserve(pipeline_.size());
+        for (int i = 0; i < listWidget_->count(); ++i) {
+            int origIdx = listWidget_->item(i)->data(Qt::UserRole).toInt();
+            if (origIdx >= 0 && origIdx < (int)pipeline_.size())
+                newPipeline.push_back(pipeline_[origIdx]);
+        }
+        if (newPipeline.size() == pipeline_.size())
+            pipeline_ = newPipeline;
+    }
+
+    void onItemChanged(QListWidgetItem* item) {
+        int row = listWidget_->row(item);
+        if (row < 0 || row >= (int)pipeline_.size()) return;
+        pipeline_[row].enabled = (item->checkState() == Qt::Checked);
+        emit pipelineChanged();
+    }
+
+    QVector<AlgoDef>      catalog_;
+    QVector<PipelinePreset> presets_;
+    QVector<PipelineStep>  pipeline_;
+    QListWidget*           listWidget_   = nullptr;
+    ParamFormWidget*       paramForm_    = nullptr;
+    QComboBox*             presetCombo_  = nullptr;
+    QLabel*                descLabel_    = nullptr;
+};
+
+// ============================================================
+//  DetectionSettingsWidget — DocumentDetector options form
+// ============================================================
+
+class DetectionSettingsWidget : public QWidget {
+    Q_OBJECT
+signals:
+    void settingsChanged();
+
+public:
+    struct DetSettings {
+        double cannyFactor                = 2.0;
+        int    morphologyAnchorSize       = 4;
+        int    dilateAnchorSize           = 3;
+        int    thresh                     = 160;
+        int    threshMax                  = 256;
+        int    bilateralFilterValue       = 18;
+        int    medianBlurValue            = 9;
+        double contoursApproxEpsilonFactor = 0.02;
+        int    houghLinesThreshold        = 0;
+        int    houghLinesMinLineLength    = 55;
+        int    houghLinesMaxLineGap       = 0;
+        int    useChannel                 = 0; // 0=auto (-1 in detector), 1-3 = ch 0-2
+        // Book mode gutter detection
+        double gutterSensitivity          = 0.15; // significance threshold (0.05=very sensitive, 0.40=strict)
+    };
+
+    DetSettings settings;
+
+    explicit DetectionSettingsWidget(QWidget* parent = nullptr) : QWidget(parent) {
+        auto* scroll = new QScrollArea(this);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameStyle(QFrame::NoFrame);
+        auto* outerVl = new QVBoxLayout(this);
+        outerVl->setContentsMargins(0,0,0,0);
+        outerVl->addWidget(scroll);
+
+        auto* w  = new QWidget;
+        auto* fl = new QFormLayout(w);
+        fl->setContentsMargins(8,8,8,8);
+        fl->setSpacing(6);
+        fl->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        scroll->setWidget(w);
+
+        auto addInt = [&](const QString& lbl, int lo, int hi, int* val) {
+            auto* row = new QWidget(w);
+            auto* hl  = new QHBoxLayout(row);
+            hl->setContentsMargins(0,0,0,0); hl->setSpacing(4);
+            auto* sl  = new QSlider(Qt::Horizontal, row);
+            auto* spn = new QSpinBox(row);
+            sl->setRange(lo, hi); sl->setValue(*val);
+            spn->setRange(lo, hi); spn->setValue(*val);
+            spn->setFixedWidth(60);
+            connect(sl,  &QSlider::valueChanged, this, [this,val,spn](int v){
+                *val = v;
+                spn->blockSignals(true); spn->setValue(v); spn->blockSignals(false);
+                emit settingsChanged();
+            });
+            connect(spn, QOverload<int>::of(&QSpinBox::valueChanged), this, [this,val,sl](int v){
+                *val = v;
+                sl->blockSignals(true); sl->setValue(v); sl->blockSignals(false);
+                emit settingsChanged();
+            });
+            hl->addWidget(sl,1); hl->addWidget(spn);
+            fl->addRow(lbl, row);
+        };
+
+        auto addDbl = [&](const QString& lbl, double lo, double hi, double st, double* val) {
+            auto* row = new QWidget(w);
+            auto* hl  = new QHBoxLayout(row);
+            hl->setContentsMargins(0,0,0,0); hl->setSpacing(4);
+            int slo=(int)(lo/st), shi=(int)(hi/st), sv=(int)(*val/st);
+            auto* sl  = new QSlider(Qt::Horizontal, row);
+            auto* spn = new QDoubleSpinBox(row);
+            sl->setRange(slo, shi); sl->setValue(sv);
+            spn->setRange(lo, hi); spn->setSingleStep(st);
+            int dec = (st < 0.01) ? 3 : (st < 0.1) ? 2 : 1;
+            spn->setDecimals(dec); spn->setValue(*val);
+            spn->setFixedWidth(72);
+            connect(sl,  &QSlider::valueChanged, this, [this,val,st,spn](int v){
+                *val = v*st;
+                spn->blockSignals(true); spn->setValue(*val); spn->blockSignals(false);
+                emit settingsChanged();
+            });
+            connect(spn, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+                    [this,val,st,sl](double v){
+                *val = v;
+                sl->blockSignals(true); sl->setValue((int)(v/st)); sl->blockSignals(false);
+                emit settingsChanged();
+            });
+            hl->addWidget(sl,1); hl->addWidget(spn);
+            fl->addRow(lbl, row);
+        };
+
+        addInt("Use Channel (0=auto)", 0, 3,   &settings.useChannel);
+        addDbl("Canny Factor",         0, 10,  0.01, &settings.cannyFactor);
+        addInt("Morphology Size",      0, 20,  &settings.morphologyAnchorSize);
+        addInt("Dilate Size",          0, 20,  &settings.dilateAnchorSize);
+        addInt("Threshold",            0, 300, &settings.thresh);
+        addInt("Threshold Max",        0, 300, &settings.threshMax);
+        addInt("Bilateral Filter",     0, 200, &settings.bilateralFilterValue);
+        addInt("Median Blur",          0, 200, &settings.medianBlurValue);
+        addDbl("Contours Epsilon",     0, 0.2, 0.001, &settings.contoursApproxEpsilonFactor);
+        addInt("Hough Threshold",      0, 500, &settings.houghLinesThreshold);
+        addInt("Hough Min Length",     0, 500, &settings.houghLinesMinLineLength);
+        addInt("Hough Max Gap",        0, 500, &settings.houghLinesMaxLineGap);
+
+        // ── Book-mode gutter section ──────────────────────────────────────
+        auto* gutterSep = new QFrame(w);
+        gutterSep->setFrameShape(QFrame::HLine);
+        gutterSep->setStyleSheet("color: #555555;");
+        fl->addRow(gutterSep);
+        auto* gutterLbl = new QLabel("<b>Book Mode / Gutter</b>", w);
+        gutterLbl->setStyleSheet("color: #80C0FF; font-size: 11px;");
+        fl->addRow(gutterLbl);
+        addDbl("Gutter Sensitivity",  0.01, 0.50, 0.01, &settings.gutterSensitivity);
+        auto* gutterHelp = new QLabel(
+            "Higher = only split when gutter is very obvious.\n"
+            "Lower  = split more aggressively.", w);
+        gutterHelp->setStyleSheet("color: #909090; font-size: 10px; font-style: italic;");
+        gutterHelp->setWordWrap(true);
+        fl->addRow(gutterHelp);
+    }
+
+    void applyToDetector(detector::DocumentDetector& det) const {
+        det.options.cannyFactor                 = settings.cannyFactor;
+        det.options.morphologyAnchorSize        = settings.morphologyAnchorSize;
+        det.options.dilateAnchorSize            = settings.dilateAnchorSize;
+        det.options.thresh                      = settings.thresh;
+        det.options.threshMax                   = settings.threshMax;
+        det.options.bilateralFilterValue        = settings.bilateralFilterValue;
+        int mb = settings.medianBlurValue;
+        det.options.medianBlurValue             = (mb > 0 && mb % 2 == 0) ? mb+1 : mb;
+        det.options.contoursApproxEpsilonFactor = settings.contoursApproxEpsilonFactor;
+        det.options.houghLinesThreshold         = settings.houghLinesThreshold;
+        det.options.houghLinesMinLineLength     = settings.houghLinesMinLineLength;
+        det.options.houghLinesMaxLineGap        = settings.houghLinesMaxLineGap;
+        det.options.useChannel                  = settings.useChannel - 1; // 0→-1 (auto)
+    }
+};
+
+// ============================================================
+//  ScannerWindow — main QMainWindow
+// ============================================================
+
+class ScannerWindow : public QMainWindow {
+    Q_OBJECT
+
+    enum ViewMode { SOURCE=0, EDGES=1, RESULT=2, COMPARE=3 };
+
+public:
+    explicit ScannerWindow(const QVector<AlgoDef>& catalog,
+                           const QVector<PipelinePreset>& presets,
+                           QWidget* parent = nullptr)
+        : QMainWindow(parent)
+        , catalog_(catalog)
+        , presets_(presets)
+        , docDetector_(300, 0)
+    {
+        setWindowTitle("Document Scanner");
+        resize(1600, 900);
+        buildUI();
+        setupMenuBar();
+        setupToolBar();
+        statusBar()->showMessage("Ready — File → Open Folder to begin");
+
+        // Debounce timer so rapid param changes don't re-run every keystroke
+        debounceTimer_ = new QTimer(this);
+        debounceTimer_->setSingleShot(true);
+        debounceTimer_->setInterval(120);
+        connect(debounceTimer_, &QTimer::timeout, this, &ScannerWindow::runPipeline);
+    }
+
+    void loadFolder(const QString& path) {
+        images_ = loadImagesFromFolder(path.toStdString());
+        fileList_->clear();
+        for (const auto& imgPath : images_) {
+            auto* item = new QListWidgetItem;
+            item->setText(QString::fromStdString(
+                filesystem::path(imgPath).filename().string()));
+            item->setToolTip(QString::fromStdString(imgPath));
+
+            // Try Qt reader first (handles EXIF orientation and most formats).
+            // setAutoTransform applies EXIF rotation/color-space data.
+            QImageReader reader(QString::fromStdString(imgPath));
+            reader.setScaledSize(QSize(88,66));
+            reader.setAutoTransform(true);
+            QImage thumb = reader.read();
+
+            if (thumb.isNull()) {
+                // Fallback: load via OpenCV (ignores embedded color profiles
+                // but reliably reads the raw pixel data for most formats).
+                cv::Mat mat = cv::imread(imgPath, cv::IMREAD_COLOR);
+                if (!mat.empty()) {
+                    cv::Mat rgb;
+                    cv::cvtColor(mat, rgb, cv::COLOR_BGR2RGB);
+                    double sc = std::min(88.0 / rgb.cols, 66.0 / rgb.rows);
+                    if (sc < 1.0)
+                        cv::resize(rgb, rgb, cv::Size(), sc, sc, cv::INTER_AREA);
+                    QImage qi(rgb.data, rgb.cols, rgb.rows,
+                              (int)rgb.step, QImage::Format_RGB888);
+                    thumb = qi.copy(); // copy so buffer outlives mat
+                }
+            }
+
+            if (!thumb.isNull())
+                item->setIcon(QIcon(QPixmap::fromImage(thumb)));
+            fileList_->addItem(item);
+        }
+        if (!images_.empty())
+            fileList_->setCurrentRow(0);
+    }
+
+    void loadImage(int idx) {
+        if (idx < 0 || idx >= (int)images_.size()) return;
+        currentIdx_   = idx;
+        currentImage_ = cv::imread(images_[idx]);
+        if (currentImage_.empty()) {
+            statusBar()->showMessage(
+                "Failed to load: " + QString::fromStdString(images_[idx]));
+            return;
+        }
+        debounceTimer_->start();
+    }
+
+private slots:
+    void runPipeline() {
+        if (currentImage_.empty()) return;
+
+        QElapsedTimer timer;
+        timer.start();
+
+        detSettings_->applyToDetector(docDetector_);
+
+        docDetector_.image = currentImage_;
+        resizedImage_      = docDetector_.resizeImageMax();
+
+        // Reset book-mode state
+        gutterFound_      = false;
+        gutterXResized_   = -1;
+        leftPageWarped_   = Mat(); rightPageWarped_  = Mat();
+        leftPageResult_   = Mat(); rightPageResult_  = Mat();
+        leftDetectedPts_.clear();  rightDetectedPts_.clear();
+
+        // ── Gutter detection (always run; result used only in book mode) ──
+        auto split = docDetector_.detectGutterAndSplit(resizedImage_, 0.30f, 5,
+            (float)detSettings_->settings.gutterSensitivity);
+
+        if (bookMode_ && split.foundGutter && split.hasLeft && split.hasRight) {
+            gutterFound_    = true;
+            gutterXResized_ = split.gutterX;
+
+            // Helper: scan one sub-image, warp, run pipeline, return result.
+            //
+            // Coordinate spaces involved:
+            //   resizedImage_  : input to this function's roi is in this space
+            //   currentImage_  : original full-resolution image
+            //   sf             : scale factor, resized→original  (sf = resizeScale * scale > 1)
+            //
+            // DocumentDetector::scanPoint() returns points already multiplied by
+            // (resizeScale * scale), so they are in original-image coordinates
+            // relative to the sub-image top-left (i.e. fullRoi origin).
+            auto processPage = [&](const Rect& roi) -> pair<Mat, vector<cv::Point>> {
+                if (roi.width <= 10 || roi.height <= 10)
+                    return {Mat(), {}};
+
+                // Build fullRoi: roi in original-image coordinates
+                double sf = docDetector_.resizeScale * docDetector_.scale;
+                int origX = std::max(0, (int)(roi.x * sf));
+                int origY = std::max(0, (int)(roi.y * sf));
+                int origW = std::min((int)(roi.width  * sf), currentImage_.cols - origX);
+                int origH = std::min((int)(roi.height * sf), currentImage_.rows - origY);
+                if (origW <= 10 || origH <= 10) return {Mat(), {}};
+                Rect fullRoi(origX, origY, origW, origH);
+
+                Mat subImage = resizedImage_(roi).clone();
+                Mat subEdged;
+                auto pts = docDetector_.scanPoint(subEdged, subImage, /*drawContours=*/false);
+
+                // pts[0] points are in original-space relative to sub-image top-left
+                // (scanPoint multiplied them by resizeScale * scale internally).
+                // For warp  : use directly — they are in pageOrig = currentImage_(fullRoi) space.
+                // For display: add fullRoi origin to get absolute currentImage_ coordinates.
+
+                vector<cv::Point> warpPts;
+                vector<cv::Point> displayPts;
+
+                if (!pts.empty()) {
+                    for (auto& p : pts[0]) {
+                        warpPts.push_back(cv::Point(
+                            std::clamp(p.x, 0, fullRoi.width  - 1),
+                            std::clamp(p.y, 0, fullRoi.height - 1)));
+                        displayPts.push_back(cv::Point(p.x + fullRoi.x,
+                                                       p.y + fullRoi.y));
+                    }
+                } else {
+                    // Fallback: full page rectangle (no perspective correction)
+                    warpPts = {
+                        cv::Point(0, 0),
+                        cv::Point(fullRoi.width, 0),
+                        cv::Point(fullRoi.width, fullRoi.height),
+                        cv::Point(0, fullRoi.height)
+                    };
+                    displayPts = {
+                        cv::Point(fullRoi.x, fullRoi.y),
+                        cv::Point(fullRoi.x + fullRoi.width,  fullRoi.y),
+                        cv::Point(fullRoi.x + fullRoi.width,  fullRoi.y + fullRoi.height),
+                        cv::Point(fullRoi.x, fullRoi.y + fullRoi.height)
+                    };
+                }
+
+                Mat pageOrig = currentImage_(fullRoi).clone();
+                Mat warpedPage = cropAndWarp(pageOrig, warpPts);
+                if (warpedPage.empty()) warpedPage = pageOrig;
+
+                return {warpedPage, displayPts};
+            };
+
+            auto [lWarped, lPts] = processPage(split.leftPage);
+            auto [rWarped, rPts] = processPage(split.rightPage);
+
+            leftPageWarped_  = lWarped;
+            rightPageWarped_ = rWarped;
+            leftDetectedPts_ = lPts;
+            rightDetectedPts_= rPts;
+
+            // Run the algorithm pipeline on each page independently, timing each step
+            leftPageResult_  = leftPageWarped_.empty()  ? Mat() : leftPageWarped_.clone();
+            rightPageResult_ = rightPageWarped_.empty() ? Mat() : rightPageWarped_.clone();
+            {
+                const auto& pl = pipelineWidget_->pipeline();
+                QVector<long long> timings(pl.size(), -1);
+                for (int si = 0; si < (int)pl.size(); ++si) {
+                    const auto& step = pl[si];
+                    if (!step.enabled) continue;
+                    QElapsedTimer st; st.start();
+                    if (!leftPageResult_.empty())  applyStep(step, leftPageResult_);
+                    if (!rightPageResult_.empty()) applyStep(step, rightPageResult_);
+                    timings[si] = st.elapsed();
+                }
+                pipelineWidget_->updateStepTimings(timings);
+            }
+
+            // For the RESULT view we stitch both pages side by side
+            resultImage_ = stitchPages(leftPageResult_, rightPageResult_);
+
+            // Also produce a combined edge map and detected points for other views
+            edged_ = Mat();
+            detectedPoints_.clear();
+        } else {
+            // ── Standard single-page pipeline ────────────────────────────
+            vector<vector<cv::Point>> pointsList;
+            pointsList = docDetector_.scanPoint(edged_, resizedImage_, true);
+
+            if (pointsList.empty()) {
+                pointsList.push_back({
+                    cv::Point(0,0),
+                    cv::Point(currentImage_.cols,0),
+                    cv::Point(currentImage_.cols,currentImage_.rows),
+                    cv::Point(0,currentImage_.rows)
+                });
+            }
+
+            if (!pointsList.empty()) {
+                detectedPoints_ = pointsList[0];
+                warped_ = cropAndWarp(currentImage_, pointsList[0]);
+            } else {
+                detectedPoints_.clear();
+                warped_ = Mat();
+            }
+
+            resultImage_ = warped_.empty() ? Mat() : warped_.clone();
+            {
+                const auto& pl = pipelineWidget_->pipeline();
+                QVector<long long> timings(pl.size(), -1);
+                for (int si = 0; si < (int)pl.size(); ++si) {
+                    const auto& step = pl[si];
+                    if (!step.enabled || resultImage_.empty()) continue;
+                    QElapsedTimer st; st.start();
+                    applyStep(step, resultImage_);
+                    timings[si] = st.elapsed();
+                }
+                pipelineWidget_->updateStepTimings(timings);
+            }
+        }
+
+        long long ms = timer.elapsed();
+        QString modeStr = bookMode_ ?
+            (gutterFound_ ? "📖 Book (gutter found)" : "📖 Book (no gutter — single page)") :
+            "Single Page";
+        bool detected = bookMode_ ? gutterFound_ :
+            (!detectedPoints_.empty() &&
+             !(detectedPoints_.size() == 4 &&
+               detectedPoints_[0] == cv::Point(0,0) &&
+               detectedPoints_[2] == cv::Point(currentImage_.cols,currentImage_.rows)));
+        statusBar()->showMessage(
+            QString("Image %1/%2  |  %3  |  Pipeline: %4ms  |  Detection: %5")
+            .arg(currentIdx_+1).arg((int)images_.size())
+            .arg(modeStr)
+            .arg(ms)
+            .arg(detected ? "found" : "not found / fallback"));
+
+        updateDisplay();
+    }
+
+    void onViewChanged(int id) {
+        viewMode_ = (ViewMode)id;
+        updateDisplay();
+    }
+
+    void onFileClicked(int row) {
+        if (row < 0 || row >= (int)images_.size()) return;
+        loadImage(row);
+    }
+
+    void onOpenFolder() {
+        QString dir = QFileDialog::getExistingDirectory(
+            this, "Open Image Folder", QString(),
+            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+        if (!dir.isEmpty()) loadFolder(dir);
+    }
+
+    void onSaveResult() {
+        if (bookMode_ && gutterFound_) {
+            // In book mode: offer to save both pages
+            QString basePath = QFileDialog::getSaveFileName(
+                this, "Save Pages (base path — _left/_right will be appended)",
+                QString(), "Images (*.png *.jpg *.bmp)");
+            if (basePath.isEmpty()) return;
+            QString ext  = QFileInfo(basePath).suffix();
+            QString base = QFileInfo(basePath).absolutePath() + "/"
+                         + QFileInfo(basePath).completeBaseName();
+            if (!leftPageResult_.empty())
+                cv::imwrite((base + "_left."  + ext).toStdString(), leftPageResult_);
+            if (!rightPageResult_.empty())
+                cv::imwrite((base + "_right." + ext).toStdString(), rightPageResult_);
+        } else {
+            if (resultImage_.empty()) {
+                QMessageBox::information(this, "Save", "No result image to save.");
+                return;
+            }
+            QString path = QFileDialog::getSaveFileName(
+                this, "Save Result", QString(),
+                "Images (*.png *.jpg *.bmp)");
+            if (!path.isEmpty())
+                cv::imwrite(path.toStdString(), resultImage_);
+        }
+    }
+
+    void onPrevImage() {
+        if (images_.empty()) return;
+        int row = (currentIdx_ - 1 + (int)images_.size()) % (int)images_.size();
+        fileList_->setCurrentRow(row);
+    }
+
+    void onNextImage() {
+        if (images_.empty()) return;
+        int row = (currentIdx_ + 1) % (int)images_.size();
+        fileList_->setCurrentRow(row);
+    }
+
+private:
+    // ----- Pipeline execution -----
+
+    /** Stitch two page images side by side with a thin divider line. */
+    static Mat stitchPages(const Mat& left, const Mat& right) {
+        if (left.empty() && right.empty())
+            return Mat();
+        if (left.empty())  return right.clone();
+        if (right.empty()) return left.clone();
+
+        // Normalise to the same height
+        Mat r = right.clone();
+        if (r.rows != left.rows && r.rows > 0) {
+            double sc = (double)left.rows / r.rows;
+            cv::resize(r, r, Size((int)(r.cols * sc), left.rows));
+        }
+
+        const int gap = 6;
+        Mat out(left.rows, left.cols + gap + r.cols, CV_8UC3, Scalar(30, 30, 30));
+        if (left.type() == CV_8UC3)
+            left.copyTo(out(Rect(0, 0, left.cols, left.rows)));
+        else { Mat tmp; cvtColor(left, tmp, COLOR_GRAY2BGR); tmp.copyTo(out(Rect(0,0,left.cols,left.rows))); }
+        if (r.type() == CV_8UC3)
+            r.copyTo(out(Rect(left.cols + gap, 0, r.cols, out.rows)));
+        else { Mat tmp; cvtColor(r, tmp, COLOR_GRAY2BGR); tmp.copyTo(out(Rect(left.cols+gap, 0, r.cols, out.rows))); }
+        // Gutter divider line
+        line(out, Point(left.cols + gap/2, 0), Point(left.cols + gap/2, out.rows),
+             Scalar(80, 180, 255), 2, LINE_AA);
+        return out;
+    }
+
+    void applyStep(const PipelineStep& step, Mat& img) {
+        if (!step.def.implemented) return; // placeholder
+
+        const auto& id = step.def.id;
+
+        if (id == "whitepaper" || id == "whitepaper2") {
+            WhitePaperTransformOptions opts;
+            opts.csBlackPer = (int)step.paramValues.value("csBlackPer", 2);
+            opts.csWhitePer = step.paramValues.value("csWhitePer", 99.5);
+            opts.gaussKSize = (int)step.paramValues.value("gaussKSize", 3);
+            opts.dogKSize   = (int)step.paramValues.value("dogKSize",   15);
+            opts.dogSigma1  = (int)step.paramValues.value("dogSigma1",  100);
+            opts.dogSigma2  = (int)step.paramValues.value("dogSigma2",  0);
+            string s;
+            jsoncons::encode_json(opts, s, jsoncons::indenting::no_indent);
+            string key = (id == "whitepaper") ? "whitepaper_" + s : "whitepaper2_" + s;
+            detector::DocumentDetector::applyTransforms(img, key);
+        }
+        else if (id == "enhance") {
+            detector::DocumentDetector::applyTransforms(img, "enhance");
+        }
+        else if (id == "colors") {
+            int resizeT  = (int)step.paramValues.value("resizeThreshold",     100);
+            int filterD  = (int)step.paramValues.value("filterDistThreshold", 20);
+            int distT    = (int)step.paramValues.value("distThreshold",       40);
+            int nbCol    = (int)step.paramValues.value("nbColors",            5);
+            int colSp    = (int)step.paramValues.value("colorSpace",          0);
+            int palSp    = (int)step.paramValues.value("paletteColorSpace",   2);
+            colorSimplificationTransform(
+                img, img, false, resizeT, filterD, distT, nbCol,
+                (ColorSpace)colSp, (ColorSpace)palSp);
+        }
+        else if (id == "adaptive_sauvola") {
+            int ws       = oddWindowSize((int)step.paramValues.value("windowSize", 25));
+            double k     = step.paramValues.value("k",     34) / 100.0;
+            double delta = step.paramValues.value("delta",  0);
+            Mat dst;
+            adaptive::binarizeSauvola(img, dst, ws, k, delta);
+            if (img.channels() == 3) cvtColor(dst, img, COLOR_GRAY2BGR);
+            else img = dst;
+        }
+        else if (id == "adaptive_wolf") {
+            int ws   = oddWindowSize((int)step.paramValues.value("windowSize", 25));
+            double k = step.paramValues.value("k", 30) / 100.0;
+            Mat dst;
+            adaptive::binarizeWolf(img, dst, ws, k);
+            if (img.channels() == 3) cvtColor(dst, img, COLOR_GRAY2BGR);
+            else img = dst;
+        }
+        else if (id == "adaptive_bradley") {
+            int ws   = oddWindowSize((int)step.paramValues.value("windowSize", 25));
+            double k = step.paramValues.value("k", 15) / 100.0;
+            Mat dst;
+            adaptive::binarizeBradley(img, dst, ws, k);
+            if (img.channels() == 3) cvtColor(dst, img, COLOR_GRAY2BGR);
+            else img = dst;
+        }
+        else if (id == "adaptive_edgediv") {
+            int ws     = oddWindowSize((int)step.paramValues.value("windowSize", 25));
+            double kep = step.paramValues.value("kep", 50) / 100.0;
+            double kdb = step.paramValues.value("kdb", 50) / 100.0;
+            Mat dst;
+            adaptive::binarizeEdgeDiv(img, dst, ws, kep, kdb);
+            if (img.channels() == 3) cvtColor(dst, img, COLOR_GRAY2BGR);
+            else img = dst;
+        }
+        else if (id == "adaptive_grad") {
+            int ws   = oddWindowSize((int)step.paramValues.value("windowSize", 25));
+            double k = step.paramValues.value("k", 30) / 100.0;
+            Mat dst;
+            adaptive::binarizeGrad(img, dst, ws, k);
+            if (img.channels() == 3) cvtColor(dst, img, COLOR_GRAY2BGR);
+            else img = dst;
+        }
+        else if (id == "skew_correct") {
+            double maxAngle = step.paramValues.value("maxAngle", 10);
+            skew::SkewResult sr = skew::detectSkew(img, maxAngle);
+            if (std::abs(sr.angleDeg) > 0.05)
+                img = skew::correctSkew(img, sr.angleDeg);
+        }
+        else if (id == "wiener_denoise") {
+            int ws            = oddWindowSize((int)step.paramValues.value("windowSize", 5));
+            double noiseSigma = step.paramValues.value("noiseSigma", 10);
+            Mat gray, dst;
+            if (img.channels() == 3) cvtColor(img, gray, COLOR_BGR2GRAY);
+            else gray = img.clone();
+            denoiser::wienerDenoise(gray, dst, cv::Size(ws, ws), noiseSigma);
+            if (img.channels() == 3) cvtColor(dst, img, COLOR_GRAY2BGR);
+            else img = dst;
+        }
+        else if (id == "wiener_color") {
+            int ws     = oddWindowSize((int)step.paramValues.value("windowSize", 5));
+            double coef = step.paramValues.value("coef", 10) / 100.0;
+            if (img.channels() == 3) {
+                denoiser::wienerDenoiseColor(img, img, cv::Size(ws, ws), coef);
+            } else {
+                Mat dst;
+                denoiser::wienerDenoise(img, dst, cv::Size(ws, ws), coef * 255.0);
+                img = dst;
+            }
+        }
+        else if (id == "bg_normalize") {
+            int polyDeg = (int)step.paramValues.value("polyDegree", 4);
+            bgest::normalizeIllumination(img, img, polyDeg);
+        }
+        else if (id == "despeckle_cautious") {
+            speckle::despeckleInPlace(img, speckle::DespeckleLevel::CAUTIOUS);
+        }
+        else if (id == "despeckle_normal") {
+            speckle::despeckleInPlace(img, speckle::DespeckleLevel::NORMAL);
+        }
+        else if (id == "despeckle_aggressive") {
+            speckle::despeckleInPlace(img, speckle::DespeckleLevel::AGGRESSIVE);
+        }
+    }
+
+    // ----- Display -----
+
+    void updateDisplay() {
+        if (currentImage_.empty()) return;
+
+        Mat display;
+
+        // ── Book mode with gutter found: specialised views ──────────────────
+        if (bookMode_ && gutterFound_) {
+            switch (viewMode_) {
+                case SOURCE: {
+                    display = currentImage_.clone();
+                    // gutterXResized_ is in resizedImage_ space; multiply by sf to get original coords.
+                    double sf = docDetector_.resizeScale * docDetector_.scale;
+
+                    // Draw gutter line
+                    if (gutterXResized_ > 0 && sf > 0.0) {
+                        int gx = (int)(gutterXResized_ * sf);
+                        line(display, Point(gx, 0), Point(gx, display.rows),
+                             Scalar(80, 180, 255), 3, LINE_AA);
+                    }
+
+                    // leftDetectedPts_ / rightDetectedPts_ are already in original-image coords.
+                    // Draw left-page contour (cyan)
+                    if (!leftDetectedPts_.empty()) {
+                        vector<vector<cv::Point>> c = {leftDetectedPts_};
+                        polylines(display, c, true, Scalar(0, 220, 255), 3, LINE_AA);
+                        for (auto& p : leftDetectedPts_)
+                            circle(display, p, 8, Scalar(0, 255, 100), -1, LINE_AA);
+                    }
+                    // Draw right-page contour (orange)
+                    if (!rightDetectedPts_.empty()) {
+                        vector<vector<cv::Point>> c = {rightDetectedPts_};
+                        polylines(display, c, true, Scalar(0, 140, 255), 3, LINE_AA);
+                        for (auto& p : rightDetectedPts_)
+                            circle(display, p, 8, Scalar(0, 200, 255), -1, LINE_AA);
+                    }
+                    break;
+                }
+                case EDGES: {
+                    // Show combined edge images side by side (edged_ not populated in book mode)
+                    display = currentImage_.clone();
+                    break;
+                }
+                case RESULT: {
+                    // Both pages processed by pipeline, side by side
+                    Mat l = leftPageResult_.empty()  ? Mat(400, 300, CV_8UC3, Scalar(30,30,30)) : leftPageResult_.clone();
+                    Mat r = rightPageResult_.empty() ? Mat(400, 300, CV_8UC3, Scalar(30,30,30)) : rightPageResult_.clone();
+
+                    // Add "Left" / "Right" labels
+                    if (!leftPageResult_.empty())
+                        putText(l, "Left Page",  Point(10, 28), FONT_HERSHEY_SIMPLEX, 0.8, Scalar(80,200,255), 2, LINE_AA);
+                    if (!rightPageResult_.empty())
+                        putText(r, "Right Page", Point(10, 28), FONT_HERSHEY_SIMPLEX, 0.8, Scalar(80,200,255), 2, LINE_AA);
+
+                    display = stitchPages(l, r);
+                    break;
+                }
+                case COMPARE: {
+                    // Left: original resized; Right: both pages side by side
+                    Mat orig = currentImage_.clone();
+                    Mat processed = stitchPages(leftPageResult_, rightPageResult_);
+                    if (processed.empty())
+                        processed = Mat(orig.size(), CV_8UC3, Scalar(30,30,30));
+                    // Normalise heights
+                    if (processed.rows != orig.rows && processed.rows > 0) {
+                        double sc = (double)orig.rows / processed.rows;
+                        cv::resize(processed, processed, Size((int)(processed.cols*sc), orig.rows));
+                    }
+                    const int gap = 4;
+                    display = Mat(orig.rows, orig.cols + gap + processed.cols, CV_8UC3, Scalar(50,50,50));
+                    orig.copyTo(display(Rect(0, 0, orig.cols, orig.rows)));
+                    processed.copyTo(display(Rect(orig.cols + gap, 0, processed.cols, orig.rows)));
+                    line(display, Point(orig.cols+1,0), Point(orig.cols+1,display.rows),
+                         Scalar(255,200,0), 2, LINE_AA);
+                    break;
+                }
+            }
+            imageDisplay_->setImage(matToQPixmap(display));
+            return;
+        }
+
+        // ── Standard single-page views ────────────────────────────────────────
+        switch (viewMode_) {
+            case SOURCE: {
+                display = currentImage_.clone();
+                // Draw detected corners overlay.
+                // detectedPoints_ are already in original-image coordinates
+                // (DocumentDetector::scanPoint multiplies by resizeScale * scale internally).
+                if (!detectedPoints_.empty()) {
+                    vector<vector<cv::Point>> contours = {detectedPoints_};
+                    polylines(display, contours, true, Scalar(0,200,255), 3, LINE_AA);
+                    for (auto& p : detectedPoints_)
+                        circle(display, p, 8, Scalar(0,255,100), -1, LINE_AA);
+                }
+                // Draw gutter line even when not in book mode (informational).
+                // gutterXResized_ is in resizedImage_ space; multiply by sf to get original.
+                if (gutterXResized_ > 0) {
+                    double sf = docDetector_.resizeScale * docDetector_.scale;
+                    if (sf > 0.0) {
+                        int gx = (int)(gutterXResized_ * sf);
+                        line(display, Point(gx, 0), Point(gx, display.rows),
+                             Scalar(80, 80, 255), 2, LINE_AA);
+                    }
+                }
+                break;
+            }
+            case EDGES: {
+                if (!edged_.empty()) {
+                    if (edged_.channels() == 1)
+                        cvtColor(edged_, display, COLOR_GRAY2BGR);
+                    else
+                        display = edged_.clone();
+                    if (!resizedImage_.empty() && resizedImage_.rows > 0) {
+                        double scaleBack = (double)currentImage_.rows / resizedImage_.rows;
+                        cv::resize(display, display, Size(), scaleBack, scaleBack, INTER_LINEAR);
+                    }
+                } else {
+                    display = currentImage_.clone();
+                }
+                break;
+            }
+            case RESULT: {
+                if (!resultImage_.empty())
+                    display = resultImage_.clone();
+                else {
+                    display = Mat(300, 400, CV_8UC3, Scalar(30,30,30));
+                    putText(display, "No result", Point(80,160),
+                            FONT_HERSHEY_SIMPLEX, 1.2, Scalar(120,120,120), 2);
+                }
+                break;
+            }
+            case COMPARE: {
+                const int gap = 4;
+                Mat left  = currentImage_.clone();
+                Mat right = resultImage_.empty()
+                           ? Mat(left.size(), CV_8UC3, Scalar(30,30,30))
+                           : resultImage_.clone();
+                if (right.rows != left.rows && right.rows > 0) {
+                    double sc = (double)left.rows / right.rows;
+                    cv::resize(right, right, Size((int)(right.cols*sc), left.rows));
+                }
+                display = Mat(left.rows, left.cols + right.cols + gap, CV_8UC3, Scalar(50,50,50));
+                left.copyTo( display(Rect(0,                0, left.cols,  left.rows)));
+                right.copyTo(display(Rect(left.cols + gap,  0, right.cols, left.rows)));
+                line(display, Point(left.cols + gap/2, 0), Point(left.cols + gap/2, display.rows),
+                     Scalar(255,200,0), 2, LINE_AA);
+                break;
+            }
+        }
+
+        imageDisplay_->setImage(matToQPixmap(display));
+    }
+
+    // ----- UI construction -----
+
+    void buildUI() {
+        auto* central = new QWidget(this);
+        setCentralWidget(central);
+        auto* mainHl = new QHBoxLayout(central);
+        mainHl->setContentsMargins(4,4,4,4);
+        mainHl->setSpacing(4);
+
+        auto* mainSplit = new QSplitter(Qt::Horizontal, central);
+        mainSplit->setHandleWidth(5);
+
+        // ── Left: image file list ──
+        auto* leftPanel = new QWidget;
+        auto* leftVl    = new QVBoxLayout(leftPanel);
+        leftVl->setContentsMargins(0,0,0,0); leftVl->setSpacing(2);
+        auto* folderLbl = new QLabel("Images", leftPanel);
+        folderLbl->setStyleSheet("font-weight: bold; padding: 4px;");
+        fileList_ = new QListWidget(leftPanel);
+        fileList_->setIconSize(QSize(88,66));
+        fileList_->setSpacing(2);
+        fileList_->setViewMode(QListView::ListMode);
+        fileList_->setResizeMode(QListView::Adjust);
+        connect(fileList_, &QListWidget::currentRowChanged,
+                this, &ScannerWindow::onFileClicked);
+        leftVl->addWidget(folderLbl);
+        leftVl->addWidget(fileList_,1);
+        leftPanel->setMinimumWidth(120);
+        leftPanel->setMaximumWidth(240);
+
+        // ── Center: image view ──
+        auto* centerPanel = new QWidget;
+        auto* centerVl    = new QVBoxLayout(centerPanel);
+        centerVl->setContentsMargins(0,0,0,0); centerVl->setSpacing(2);
+
+        // View mode buttons bar
+        auto* viewBar = new QWidget(centerPanel);
+        viewBar->setFixedHeight(36);
+        auto* viewHl  = new QHBoxLayout(viewBar);
+        viewHl->setContentsMargins(4,2,4,2); viewHl->setSpacing(4);
+        auto* viewBtnGroup = new QButtonGroup(viewBar);
+        viewBtnGroup_ = viewBtnGroup;
+        viewBtnGroup->setExclusive(true);
+        static const QString viewNames[] = {"Source","Edges","Result","⟺ Compare"};
+        for (int i = 0; i < 4; ++i) {
+            auto* btn = new QPushButton(viewNames[i], viewBar);
+            btn->setCheckable(true);
+            btn->setFixedHeight(28);
+            if (i == 0) btn->setChecked(true);
+            viewBtnGroup->addButton(btn, i);
+            viewHl->addWidget(btn);
+        }
+        viewHl->addStretch();
+        connect(viewBtnGroup, &QButtonGroup::idClicked,
+                this, &ScannerWindow::onViewChanged);
+
+        imageDisplay_ = new ImageDisplayWidget(centerPanel);
+        centerVl->addWidget(viewBar);
+        centerVl->addWidget(imageDisplay_, 1);
+
+        // ── Right: pipeline + detection settings ──
+        auto* rightSplit = new QSplitter(Qt::Vertical);
+        rightSplit->setHandleWidth(4);
+
+        pipelineWidget_ = new AlgorithmPipelineWidget(catalog_, presets_);
+        connect(pipelineWidget_, &AlgorithmPipelineWidget::pipelineChanged,
+                this, [this]{ debounceTimer_->start(); });
+
+        detSettings_ = new DetectionSettingsWidget;
+        connect(detSettings_, &DetectionSettingsWidget::settingsChanged,
+                this, [this]{ debounceTimer_->start(); });
+
+        auto* detGb = new QGroupBox("Detection Settings");
+        auto* detVl = new QVBoxLayout(detGb);
+        detVl->setContentsMargins(0,0,0,0);
+        detVl->addWidget(detSettings_);
+
+        rightSplit->addWidget(pipelineWidget_);
+        rightSplit->addWidget(detGb);
+        rightSplit->setStretchFactor(0, 2);
+        rightSplit->setStretchFactor(1, 1);
+
+        auto* rightPanel = new QWidget;
+        auto* rightVl    = new QVBoxLayout(rightPanel);
+        rightVl->setContentsMargins(0,0,0,0);
+        rightVl->addWidget(rightSplit);
+        rightPanel->setMinimumWidth(260);
+        rightPanel->setMaximumWidth(420);
+
+        mainSplit->addWidget(leftPanel);
+        mainSplit->addWidget(centerPanel);
+        mainSplit->addWidget(rightPanel);
+        mainSplit->setStretchFactor(0, 0);
+        mainSplit->setStretchFactor(1, 1);
+        mainSplit->setStretchFactor(2, 0);
+        mainSplit->setSizes({180, 1000, 320});
+
+        mainHl->addWidget(mainSplit);
+    }
+
+    void setupMenuBar() {
+        auto* fileMenu = menuBar()->addMenu("&File");
+        fileMenu->addAction("&Open Folder…", this, &ScannerWindow::onOpenFolder,
+                            QKeySequence::Open);
+        fileMenu->addSeparator();
+        fileMenu->addAction("&Save Result…", this, &ScannerWindow::onSaveResult,
+                            QKeySequence::Save);
+        fileMenu->addSeparator();
+        fileMenu->addAction("E&xit", this, &QWidget::close, QKeySequence::Quit);
+
+        // Presets menu
+        auto* presetsMenu = menuBar()->addMenu("&Presets");
+        presetsMenu->setToolTipsVisible(true);
+        for (int i = 0; i < (int)presets_.size(); ++i) {
+            const auto& pr = presets_[i];
+            QAction* act = presetsMenu->addAction(pr.name, this, [this, i]{
+                pipelineWidget_->loadPresetByIndex(i);
+                viewMode_ = RESULT;
+                if (viewBtnGroup_)
+                    viewBtnGroup_->button(RESULT)->setChecked(true);
+                // "Book Scan" preset (index 0) auto-enables book mode
+                if (i == 0 && bookModeAction_) {
+                    bookModeAction_->setChecked(true);
+                }
+                debounceTimer_->start();
+            });
+            act->setToolTip(pr.description);
+            act->setStatusTip(pr.description.split('\n').first());
+        }
+        presetsMenu->addSeparator();
+        presetsMenu->addAction("Clear Pipeline", this, [this]{
+            pipelineWidget_->clearPipeline();
+        });
+
+        auto* viewMenu = menuBar()->addMenu("&View");
+        viewMenu->addAction("Fit Image", this, [this]{
+            if (imageDisplay_) imageDisplay_->fitToWindow();
+        }, QKeySequence("F"));
+
+        auto* navMenu = menuBar()->addMenu("&Navigate");
+        navMenu->addAction("Previous Image", this, &ScannerWindow::onPrevImage,
+                           QKeySequence(Qt::Key_Left));
+        navMenu->addAction("Next Image",     this, &ScannerWindow::onNextImage,
+                           QKeySequence(Qt::Key_Right));
+    }
+
+    void setupToolBar() {
+        auto* tb = addToolBar("Main");
+        tb->setMovable(false);
+        tb->addAction("Open...", this, &ScannerWindow::onOpenFolder);
+        tb->addSeparator();
+        tb->addAction("< Prev", this, &ScannerWindow::onPrevImage);
+        tb->addAction("Next >", this, &ScannerWindow::onNextImage);
+        tb->addSeparator();
+
+        // Book Mode toggle
+        bookModeAction_ = tb->addAction("Book Mode");
+        bookModeAction_->setCheckable(true);
+        bookModeAction_->setChecked(false);
+        bookModeAction_->setToolTip(
+            "Book Mode: detect gutter, split into left and right pages,\n"
+            "process each independently and display side by side.\n"
+            "Uses a scantailor-inspired darkness+gradient valley detector.");
+        connect(bookModeAction_, &QAction::toggled, this, [this](bool on) {
+            bookMode_ = on;
+            debounceTimer_->start();
+        });
+        tb->addSeparator();
+
+        // Quick-load presets from toolbar
+        auto* presetTbBtn = new QPushButton("Presets v", tb);
+        presetTbBtn->setFlat(true);
+        presetTbBtn->setStyleSheet("padding: 3px 8px;");
+        presetTbBtn->setToolTip("Quick-load a pipeline preset");
+        connect(presetTbBtn, &QPushButton::clicked, this, [this, presetTbBtn]{
+            QMenu m(this);
+            for (int i = 0; i < (int)presets_.size(); ++i) {
+                const auto& pr = presets_[i];
+                m.addAction(pr.name, this, [this, i]{
+                    pipelineWidget_->loadPresetByIndex(i);
+                    debounceTimer_->start();
+                });
+            }
+            m.exec(presetTbBtn->mapToGlobal(QPoint(0, presetTbBtn->height())));
+        });
+        tb->addWidget(presetTbBtn);
+
+        tb->addSeparator();
+        tb->addAction("Save Result", this, &ScannerWindow::onSaveResult);
+    }
+
+    // ----- Members -----
+
+    QVector<AlgoDef>          catalog_;
+    QVector<PipelinePreset>   presets_;
+    detector::DocumentDetector docDetector_;
+
+    vector<string>          images_;
+    int                     currentIdx_ = 0;
+    Mat                     currentImage_, resizedImage_, edged_, warped_, resultImage_;
+    vector<cv::Point>       detectedPoints_;
+    ViewMode                viewMode_ = SOURCE;
+
+    // Book Mode state
+    bool                    bookMode_    = false; ///< user toggled book mode
+    bool                    gutterFound_ = false; ///< gutter detected this frame
+    int                     gutterXResized_ = -1; ///< gutter column in resizedImage coords
+    Mat                     leftPageWarped_,  rightPageWarped_;
+    Mat                     leftPageResult_,  rightPageResult_;
+    vector<cv::Point>       leftDetectedPts_, rightDetectedPts_;
+
+    // Widgets
+    QListWidget*            fileList_       = nullptr;
+    ImageDisplayWidget*     imageDisplay_   = nullptr;
+    AlgorithmPipelineWidget* pipelineWidget_ = nullptr;
+    DetectionSettingsWidget* detSettings_   = nullptr;
+    QTimer*                 debounceTimer_  = nullptr;
+    QButtonGroup*           viewBtnGroup_   = nullptr; ///< View mode toggle buttons
+    QAction*                bookModeAction_ = nullptr; ///< Book Mode toolbar toggle
+};
+
+// ============================================================
+//  Dark theme
+// ============================================================
+
+static void applyDarkTheme(QApplication& app) {
+    app.setStyle("Fusion");
+    QPalette p;
+    p.setColor(QPalette::Window,          QColor(45,45,45));
+    p.setColor(QPalette::WindowText,      QColor(240,240,240));
+    p.setColor(QPalette::Base,            QColor(30,30,30));
+    p.setColor(QPalette::AlternateBase,   QColor(50,50,50));
+    p.setColor(QPalette::ToolTipBase,     QColor(60,60,60));
+    p.setColor(QPalette::ToolTipText,     QColor(240,240,240));
+    p.setColor(QPalette::Text,            QColor(240,240,240));
+    p.setColor(QPalette::Button,          QColor(60,60,60));
+    p.setColor(QPalette::ButtonText,      QColor(240,240,240));
+    p.setColor(QPalette::BrightText,      Qt::red);
+    p.setColor(QPalette::Link,            QColor(74,158,255));
+    p.setColor(QPalette::Highlight,       QColor(74,158,255));
+    p.setColor(QPalette::HighlightedText, Qt::black);
+    p.setColor(QPalette::Mid,             QColor(90,90,90));
+    p.setColor(QPalette::Shadow,          QColor(20,20,20));
+    app.setPalette(p);
+
+    app.setStyleSheet(R"(
+QMainWindow { background-color: #2D2D2D; }
+QSplitter::handle { background-color: #444444; }
+
+QGroupBox {
+    border: 1px solid #5A5A5A;
+    border-radius: 5px;
+    margin-top: 16px;
+    padding-top: 4px;
+    font-weight: bold;
+    color: #D0D0D0;
 }
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 8px;
+    top: -1px;
+    padding: 2px 6px;
+}
+
+QPushButton {
+    background-color: #3C3C3C;
+    color: #F0F0F0;
+    border: 1px solid #5A5A5A;
+    border-radius: 4px;
+    padding: 4px 10px;
+    min-height: 22px;
+}
+QPushButton:hover   { background-color: #4A4A4A; border-color: #7A7A7A; }
+QPushButton:pressed { background-color: #282828; }
+QPushButton:checked { background-color: #1A6ECC; border-color: #4A9EFF; color: white; }
+
+QSlider::groove:horizontal {
+    height: 4px;
+    background: #555555;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    width: 14px; height: 14px;
+    background: #4A9EFF;
+    border-radius: 7px;
+    margin: -5px 0;
+}
+QSlider::sub-page:horizontal { background: #4A9EFF; border-radius: 2px; }
+
+QSpinBox, QDoubleSpinBox, QComboBox {
+    background-color: #3C3C3C;
+    color: #F0F0F0;
+    border: 1px solid #5A5A5A;
+    border-radius: 3px;
+    padding: 1px 4px;
+}
+QComboBox::drop-down { border: none; }
+QComboBox::down-arrow { image: none; width: 0; }
+QComboBox QAbstractItemView {
+    background-color: #3C3C3C;
+    color: #F0F0F0;
+    border: 1px solid #5A5A5A;
+    selection-background-color: #1A6ECC;
+}
+
+QListWidget {
+    background-color: #252525;
+    color: #F0F0F0;
+    border: 1px solid #5A5A5A;
+    border-radius: 4px;
+    outline: none;
+}
+QListWidget::item { padding: 4px; border-radius: 3px; }
+QListWidget::item:selected { background-color: #1A6ECC; color: white; }
+QListWidget::item:hover    { background-color: #3A3A3A; }
+
+QScrollBar:vertical {
+    background: #2D2D2D; width: 10px;
+    border: none; border-radius: 5px;
+}
+QScrollBar::handle:vertical {
+    background: #5A5A5A; border-radius: 5px; min-height: 20px;
+}
+QScrollBar::handle:vertical:hover { background: #7A7A7A; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar:horizontal {
+    background: #2D2D2D; height: 10px;
+    border: none; border-radius: 5px;
+}
+QScrollBar::handle:horizontal {
+    background: #5A5A5A; border-radius: 5px; min-width: 20px;
+}
+
+QMenuBar { background-color: #2D2D2D; color: #F0F0F0; border-bottom: 1px solid #444444; }
+QMenuBar::item:selected { background-color: #1A6ECC; border-radius: 3px; }
+QMenu {
+    background-color: #3C3C3C; color: #F0F0F0;
+    border: 1px solid #5A5A5A;
+}
+QMenu::item:selected { background-color: #1A6ECC; }
+QMenu::separator     { height: 1px; background: #5A5A5A; margin: 3px 6px; }
+
+QToolBar { background-color: #2D2D2D; border-bottom: 1px solid #444444; spacing: 3px; }
+QToolBar QToolButton {
+    background: transparent; color: #F0F0F0;
+    border: 1px solid transparent; border-radius: 4px;
+    padding: 3px 7px;
+}
+QToolBar QToolButton:hover   { background-color: #4A4A4A; border-color: #5A5A5A; }
+QToolBar QToolButton:pressed { background-color: #282828; }
+
+QStatusBar    { background-color: #252525; color: #A0A0A0; }
+QScrollArea   { border: none; }
+QLabel        { color: #F0F0F0; }
+QCheckBox     { color: #F0F0F0; spacing: 5px; }
+QCheckBox::indicator {
+    width: 14px; height: 14px;
+    border: 1px solid #5A5A5A; border-radius: 2px;
+    background: #3C3C3C;
+}
+QCheckBox::indicator:checked { background: #4A9EFF; border-color: #4A9EFF; }
+)");
+}
+
+// ============================================================
+//  main
+// ============================================================
+
+int main(int argc, char** argv) {
+    QApplication app(argc, argv);
+    applyDarkTheme(app);
+
+    if (argc < 2) {
+        QMessageBox::critical(nullptr, "Usage",
+            "Usage:  scanner  <image_folder_path>  [start_image_name]");
+        return 1;
+    }
+
+    const string dirPath   = argv[1];
+    const string startName = (argc > 2) ? argv[2] : "";
+
+    auto catalog = buildCatalog();
+    auto presets = buildPresets();
+    ScannerWindow win(catalog, presets);
+    win.show();
+
+    win.loadFolder(QString::fromStdString(dirPath));
+
+    if (!startName.empty()) {
+        auto imgs = loadImagesFromFolder(dirPath);
+        for (int i = 0; i < (int)imgs.size(); ++i) {
+            if (imgs[i].find(startName) != string::npos) {
+                win.loadImage(i);
+                break;
+            }
+        }
+    }
+
+    return app.exec();
+}
+
+// Required by CMAKE_AUTOMOC when Q_OBJECT is in a .cpp file
+#include "scanner.moc"

@@ -82,7 +82,8 @@ namespace detector {
 //        int shouldNegate = 0;          // 53
         PageSplitResult detectGutterAndSplit(const Mat& input,
                                       float minPageWidthRatio = 0.20f,
-                                      int blurSize = 5);
+                                      int   blurSize          = 5,
+                                      float significanceGap   = 0.15f);
 
 
     private:
