@@ -1357,7 +1357,7 @@ private:
         Mat r = right.clone();
         if (r.rows != left.rows && r.rows > 0) {
             double sc = (double)left.rows / r.rows;
-            resize(r, r, Size((int)(r.cols * sc), left.rows));
+            cv::resize(r, r, Size((int)(r.cols * sc), left.rows));
         }
 
         const int gap = 6;
@@ -1474,7 +1474,7 @@ private:
                     // Normalise heights
                     if (processed.rows != orig.rows && processed.rows > 0) {
                         double sc = (double)orig.rows / processed.rows;
-                        resize(processed, processed, Size((int)(processed.cols*sc), orig.rows));
+                        cv::resize(processed, processed, Size((int)(processed.cols*sc), orig.rows));
                     }
                     const int gap = 4;
                     display = Mat(orig.rows, orig.cols + gap + processed.cols, CV_8UC3, Scalar(50,50,50));
@@ -1527,7 +1527,7 @@ private:
                         display = edged_.clone();
                     if (!resizedImage_.empty() && resizedImage_.rows > 0) {
                         double scaleBack = (double)currentImage_.rows / resizedImage_.rows;
-                        resize(display, display, Size(), scaleBack, scaleBack, INTER_LINEAR);
+                        cv::resize(display, display, Size(), scaleBack, scaleBack, INTER_LINEAR);
                     }
                 } else {
                     display = currentImage_.clone();
@@ -1552,7 +1552,7 @@ private:
                            : resultImage_.clone();
                 if (right.rows != left.rows && right.rows > 0) {
                     double sc = (double)left.rows / right.rows;
-                    resize(right, right, Size((int)(right.cols*sc), left.rows));
+                    cv::resize(right, right, Size((int)(right.cols*sc), left.rows));
                 }
                 display = Mat(left.rows, left.cols + right.cols + gap, CV_8UC3, Scalar(50,50,50));
                 left.copyTo( display(Rect(0,                0, left.cols,  left.rows)));
