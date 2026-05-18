@@ -10,8 +10,8 @@ android {
   def splitEnabled = (gradle.startParameter.taskNames.contains("assembleDebug") && project.hasProperty('abiFilters')) || project.hasProperty('splitEnabled');
   defaultConfig {  
     multiDexEnabled false
-    versionCode 156
-    versionName "1.23.1"
+    versionCode 157
+    versionName "1.23.2"
 
     // if (project.hasProperty('resConfigs')) {
     //   def resConfigs = project.findProperty('resConfigs')
